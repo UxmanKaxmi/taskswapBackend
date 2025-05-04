@@ -1,16 +1,18 @@
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import { createTask, getAllTasks } from "./task.service";
+import { BadRequestError } from "../../errors";
+import { AppError } from "../../errors/AppError";
 
 export async function handleCreateTask(
   req: Request,
-  res: Response
+  res: Response,
+  next: NextFunction
 ): Promise<void> {
   const { text, type } = req.body;
-  const userId = req.userId; // ✅ from JWT via middleware
+  const userId = req.userId; // ✅ added via custom middleware
 
   if (!text || !type || !userId) {
-    res.status(400).json({ error: "Missing task text, type, or user" });
-    return;
+    return next(new BadRequestError("Missing task text, type, or user ID"));
   }
 
   try {
@@ -18,20 +20,25 @@ export async function handleCreateTask(
     res.status(201).json(task);
   } catch (error: any) {
     if (error.message.includes("already created")) {
-      res.status(409).json({ error: error.message }); // Conflict
-    } else {
-      res.status(500).json({ error: "Failed to create task" });
+      return next(new AppError(error.message, 409));
     }
+    console.error("[TASK_CREATE_ERROR]", error);
+    next(new AppError("Failed to create task", 500));
   }
 }
 
-export async function handleGetTasks(_req: Request, res: Response) {
+export async function handleGetTasks(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const userId = req.userId;
+
   try {
-    console.log("[INFO] Fetching all tasks", _req, res);
-    const tasks = await getAllTasks();
+    const tasks = await getAllTasks(); // optionally filter per user
     res.status(200).json(tasks);
   } catch (error) {
     console.error("[TASK_FETCH_ERROR]", error);
-    res.status(500).json({ error: "Failed to fetch tasks" });
+    next(new AppError("Failed to fetch tasks", 500));
   }
 }
