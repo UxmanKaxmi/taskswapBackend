@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id        String   @id @default(uuid())
+  text      String
+  type      String
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+
+  @@unique([text, userId]) // ✅ Enforce uniqueness per user
+
+}
+
+model User {
+  id        String   @id
+  email     String   @unique
+  name      String
+  photo     String?
+  createdAt DateTime @default(now())
+  tasks     Task[] // ✅ Back-reference to Task
+}
