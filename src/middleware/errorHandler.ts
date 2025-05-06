@@ -1,32 +1,30 @@
 // src/middleware/errorHandler.ts
-import { Request, Response, NextFunction } from "express";
+import { ErrorRequestHandler } from "express";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../errors/AppError";
 
-export function errorHandler(
-  err: any,
-  req: Request,
-  res: Response,
-  _next: NextFunction
-) {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   console.error("❌ [Global Error]", err);
 
-  // Handle custom AppError (your custom classes)
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({ error: err.message });
+    res.status(err.statusCode).json({ error: err.message });
+    return;
   }
 
-  // Handle Prisma errors
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
       case "P2002":
-        return res.status(409).json({ error: "Duplicate entry" });
+        res.status(409).json({ error: "Duplicate entry" });
+        return;
       case "P2025":
-        return res.status(404).json({ error: "Record not found" });
+        res.status(404).json({ error: "Record not found" });
+        return;
       default:
-        return res.status(500).json({ error: `Database error [${err.code}]` });
+        res.status(500).json({ error: `Database error [${err.code}]` });
+        return;
     }
   }
 
   res.status(500).json({ error: "Something went wrong" });
-}
+  return;
+};
