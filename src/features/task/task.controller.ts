@@ -1,5 +1,10 @@
 import { Request, Response, NextFunction } from "express";
-import { createTask, getAllTasks } from "./task.service";
+import {
+  createTask,
+  deleteTask,
+  getAllTasks,
+  updateTask,
+} from "./task.service";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
 
@@ -40,5 +45,43 @@ export async function handleGetTasks(
   } catch (error) {
     console.error("[TASK_FETCH_ERROR]", error);
     next(new AppError("Failed to fetch tasks", 500));
+  }
+}
+
+export async function handleUpdateTask(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const { id } = req.params;
+  const { text, type } = req.body;
+
+  if (!text && !type) {
+    res.status(400).json({ error: "Nothing to update" });
+    return;
+  }
+
+  try {
+    const updated = await updateTask(id, { text, type });
+    res.status(200).json(updated);
+  } catch (error) {
+    console.error("[TASK_UPDATE_ERROR]", error);
+    next(new AppError("Failed to update task", 500));
+  }
+}
+
+export async function handleDeleteTask(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const { id } = req.params;
+
+  try {
+    await deleteTask(id);
+    res.status(204).send();
+  } catch (error) {
+    console.error("[TASK_DELETE_ERROR]", error);
+    next(new AppError("Failed to delete task", 500));
   }
 }

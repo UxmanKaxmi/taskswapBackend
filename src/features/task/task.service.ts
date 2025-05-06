@@ -28,3 +28,16 @@ export function getAllTasks() {
     orderBy: { createdAt: "desc" },
   });
 }
+
+export function updateTask(id: string, data: { text?: string; type?: string }) {
+  return prisma.task.update({
+    where: { id },
+    data,
+  });
+}
+
+export function deleteTask(id: string) {
+  return prisma.task.delete({
+    where: { id },
+  });
+}
