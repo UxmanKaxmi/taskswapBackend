@@ -58,6 +58,6 @@ describe("Task Update/Delete Routes", () => {
 
   it("should return 404 for deleting non-existent task", async () => {
     const res = await request(app).delete(`/tasks/non-existent-id`);
-    expect(res.status).toBe(500); // or 404 based on your controller logic
+    expect(res.status).toBe(404); // ✅ Corrected to match your controller logic
   });
 });

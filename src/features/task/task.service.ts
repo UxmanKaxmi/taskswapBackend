@@ -1,12 +1,22 @@
 import { prisma } from "../../db/client";
 
-type TaskPayload = {
+interface TaskType {
   text: string;
-  type: "reminder" | "poll" | "motivation" | "other";
+  type: "reminder" | "decision" | "motivation" | "advice";
   userId: string;
-};
+  remindAt?: Date;
+  options?: string[];
+  deliverAt?: Date;
+}
 
-export async function createTask({ text, type, userId }: TaskPayload) {
+export async function createTask({
+  text,
+  type,
+  userId,
+  remindAt,
+  options,
+  deliverAt,
+}: TaskType) {
   const existing = await prisma.task.findFirst({
     where: {
       text,
@@ -19,24 +29,48 @@ export async function createTask({ text, type, userId }: TaskPayload) {
   }
 
   return prisma.task.create({
-    data: { text, type, userId },
+    data: { text, type, userId, remindAt, options, deliverAt },
   });
 }
 
-export function getAllTasks() {
+export function getAllTasks(userId: string) {
   return prisma.task.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
   });
 }
 
-export function updateTask(id: string, data: { text?: string; type?: string }) {
+export function updateTask(
+  id: string,
+  data: {
+    text?: string;
+    type?: TaskType;
+    remindAt?: Date;
+    options?: string[];
+    deliverAt?: Date;
+  }
+) {
   return prisma.task.update({
     where: { id },
-    data,
+    data: {
+      text: data.text,
+      remindAt: data.remindAt,
+      options: data.options,
+      deliverAt: data.deliverAt,
+      ...(data.type && { type: data.type as any }), // ✅ Cast type using EnumTaskTypeFieldUpdateOperationsInput
+    },
   });
 }
 
-export function deleteTask(id: string) {
+export async function deleteTask(id: string) {
+  const existing = await prisma.task.findUnique({
+    where: { id },
+  });
+
+  if (!existing) {
+    throw new Error("Task not found.");
+  }
+
   return prisma.task.delete({
     where: { id },
   });

@@ -1,4 +1,3 @@
-// __tests__/tasks.test.ts
 import request from "supertest";
 import app from "../src/index";
 import { prisma } from "../src/db/client";
@@ -20,7 +19,6 @@ describe("Task Routes", () => {
   };
 
   beforeAll(async () => {
-    // Ensure user exists for foreign key
     await prisma.user.upsert({
       where: { id: mockUser.id },
       update: {},
@@ -34,15 +32,30 @@ describe("Task Routes", () => {
     await prisma.$disconnect();
   });
 
-  it("should create a task", async () => {
+  it("should create a reminder task", async () => {
     const res = await request(app).post("/tasks").send({
-      text: "Test task",
+      text: "Test reminder task",
       type: "reminder",
+      remindAt: new Date().toISOString(),
     });
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("id");
-    expect(res.body.text).toBe("Test task");
+    expect(res.body.text).toBe("Test reminder task");
+  });
+
+  it("should create a decision task", async () => {
+    const res = await request(app)
+      .post("/tasks")
+      .send({
+        text: "Test decision task",
+        type: "decision",
+        options: ["Option 1", "Option 2"],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty("id");
+    expect(res.body.text).toBe("Test decision task");
   });
 
   it("should get all tasks", async () => {
