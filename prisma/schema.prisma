@@ -10,14 +10,16 @@ datasource db {
 model Task {
   id        String   @id @default(uuid())
   text      String
-  type      String
+  type      TaskType
   createdAt DateTime @default(now())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  
 
-  @@unique([text, userId]) // ✅ Enforce uniqueness per user
+  remindAt  DateTime? // For reminders
+  options   String[] // For decisions (poll options)
+  deliverAt DateTime? // For motivation (scheduled delivery)
 
+  @@unique([text, userId])
 }
 
 model User {
@@ -26,5 +28,12 @@ model User {
   name      String
   photo     String?
   createdAt DateTime @default(now())
-  tasks     Task[] // ✅ Back-reference to Task
+  tasks     Task[]
+}
+
+enum TaskType {
+  reminder
+  advice
+  decision
+  motivation
 }

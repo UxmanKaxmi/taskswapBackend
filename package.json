@@ -17,7 +17,8 @@
     "dev": "NODE_ENV=development ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "jest --verbose"
+    "test": "jest --verbose",
+    "seed": "ts-node --esm prisma/seed.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
