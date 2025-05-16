@@ -16,8 +16,11 @@ model Task {
   user      User     @relation(fields: [userId], references: [id])
 
   remindAt  DateTime? // For reminders
-  options   String[] // For decisions (poll options)
+  options   String[]  @default([]) // For decisions (poll options)
   deliverAt DateTime? // For motivation (scheduled delivery)
+
+  avatar String @default("") // ✅ Add this
+  name   String @default("") // ✅ Add this
 
   @@unique([text, userId])
 }

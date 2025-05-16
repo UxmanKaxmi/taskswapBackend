@@ -1,22 +1,14 @@
 import { prisma } from "../../db/client";
+import {
+  CreateTaskInput,
+  ReminderTaskType,
+  DecisionTaskType,
+  MotivationTaskType,
+} from "../../types/task.types";
 
-interface TaskType {
-  text: string;
-  type: "reminder" | "decision" | "motivation" | "advice";
-  userId: string;
-  remindAt?: Date;
-  options?: string[];
-  deliverAt?: Date;
-}
+export async function createTask(input: CreateTaskInput) {
+  const { text, userId, type } = input;
 
-export async function createTask({
-  text,
-  type,
-  userId,
-  remindAt,
-  options,
-  deliverAt,
-}: TaskType) {
   const existing = await prisma.task.findFirst({
     where: {
       text,
@@ -28,8 +20,32 @@ export async function createTask({
     throw new Error("You already created this task.");
   }
 
+  //  Fetch user's Google photo
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { photo: true, name: true },
+  });
+  if (!user) {
+    throw new Error("User not found. Cannot create task without a valid user.");
+  }
+  const avatar = input.avatar ?? user.photo ?? undefined;
+  const name = user.name;
+
   return prisma.task.create({
-    data: { text, type, userId, remindAt, options, deliverAt },
+    data: {
+      text,
+      type,
+      userId,
+      avatar,
+      name,
+      remindAt:
+        type === "reminder" ? (input as ReminderTaskType).remindAt : undefined,
+      options: type === "decision" ? (input as DecisionTaskType).options : [],
+      deliverAt:
+        type === "motivation"
+          ? (input as MotivationTaskType).deliverAt ?? undefined
+          : undefined,
+    },
   });
 }
 
@@ -40,24 +56,19 @@ export function getAllTasks(userId: string) {
   });
 }
 
-export function updateTask(
-  id: string,
-  data: {
-    text?: string;
-    type?: TaskType;
-    remindAt?: Date;
-    options?: string[];
-    deliverAt?: Date;
-  }
-) {
+export function updateTask(id: string, data: Partial<CreateTaskInput>) {
   return prisma.task.update({
     where: { id },
     data: {
       text: data.text,
-      remindAt: data.remindAt,
-      options: data.options,
-      deliverAt: data.deliverAt,
-      ...(data.type && { type: data.type as any }), // ✅ Cast type using EnumTaskTypeFieldUpdateOperationsInput
+      type: data.type,
+      name: data.name,
+      remindAt:
+        data.type === "reminder" ? data.remindAt ?? undefined : undefined,
+      options: data.type === "decision" ? data.options ?? [] : [],
+      deliverAt:
+        data.type === "motivation" ? data.deliverAt ?? undefined : undefined,
+      avatar: data.avatar ?? undefined,
     },
   });
 }

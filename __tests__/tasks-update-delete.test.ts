@@ -31,19 +31,15 @@ describe("Task Update/Delete Routes", () => {
         text: "Initial Task",
         type: "reminder",
         userId: "test-user-id",
+        avatar: "https://example.com/photo.png", // required now
+        name: "Update Tester", // required now
       },
     });
     taskId = task.id;
   });
 
-  afterAll(async () => {
-    await prisma.task.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.$disconnect();
-  });
-
   it("should update a task", async () => {
-    const res = await request(app).put(`/tasks/${taskId}`).send({
+    const res = await request(app).patch(`/tasks/${taskId}`).send({
       text: "Updated Task Text",
     });
 
@@ -58,6 +54,6 @@ describe("Task Update/Delete Routes", () => {
 
   it("should return 404 for deleting non-existent task", async () => {
     const res = await request(app).delete(`/tasks/non-existent-id`);
-    expect(res.status).toBe(404); // ✅ Corrected to match your controller logic
+    expect(res.status).toBe(404);
   });
 });

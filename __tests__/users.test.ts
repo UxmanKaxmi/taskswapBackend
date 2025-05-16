@@ -33,6 +33,9 @@ describe("User Routes", () => {
   };
 
   beforeAll(async () => {
+    // First remove any tasks by this user to avoid FK violations
+    await prisma.task.deleteMany({ where: { userId: mockUser.id } });
+    // Then remove the user
     await prisma.user.deleteMany({ where: { id: mockUser.id } });
   });
 
