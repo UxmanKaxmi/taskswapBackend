@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Task" ADD COLUMN     "avatar" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "name" TEXT NOT NULL DEFAULT '',
+ALTER COLUMN "options" SET DEFAULT ARRAY[]::TEXT[];

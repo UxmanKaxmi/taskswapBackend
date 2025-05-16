@@ -11,7 +11,7 @@ const router = Router();
 
 router.post("/", requireAuth, handleCreateTask);
 router.get("/", requireAuth, handleGetTasks);
-router.put("/:id", requireAuth, handleUpdateTask);
+router.patch("/:id", requireAuth, handleUpdateTask);
 router.delete("/:id", requireAuth, handleDeleteTask);
 
 export default router;

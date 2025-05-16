@@ -15,7 +15,7 @@ describe("Task Routes", () => {
     id: "test-user-id",
     email: "tasktest@example.com",
     name: "Task Tester",
-    photo: null,
+    photo: "https://myavatar.com/pic.jpg", // ✅ this is correct
   };
 
   beforeAll(async () => {
@@ -26,17 +26,13 @@ describe("Task Routes", () => {
     });
   });
 
-  afterAll(async () => {
-    await prisma.task.deleteMany({ where: { userId: mockUser.id } });
-    await prisma.user.delete({ where: { id: mockUser.id } });
-    await prisma.$disconnect();
-  });
-
   it("should create a reminder task", async () => {
     const res = await request(app).post("/tasks").send({
       text: "Test reminder task",
       type: "reminder",
       remindAt: new Date().toISOString(),
+      avatar: mockUser.photo,
+      name: mockUser.name,
     });
 
     expect(res.status).toBe(201);
@@ -51,6 +47,8 @@ describe("Task Routes", () => {
         text: "Test decision task",
         type: "decision",
         options: ["Option 1", "Option 2"],
+        avatar: mockUser.photo,
+        name: mockUser.name,
       });
 
     expect(res.status).toBe(201);
