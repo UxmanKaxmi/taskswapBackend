@@ -19,8 +19,10 @@ model Task {
   options   String[]  @default([]) // For decisions (poll options)
   deliverAt DateTime? // For motivation (scheduled delivery)
 
-  avatar String @default("") // ✅ Add this
-  name   String @default("") // ✅ Add this
+  avatar String @default("")
+  name   String @default("")
+
+  completed Boolean @default(false) // ✅ New field
 
   @@unique([text, userId])
 }
