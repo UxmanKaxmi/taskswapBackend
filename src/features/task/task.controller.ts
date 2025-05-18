@@ -3,10 +3,11 @@ import {
   createTask,
   deleteTask,
   getAllTasks,
+  markTaskAsDone,
+  markTaskAsNotDone,
   updateTask,
 } from "./task.service";
 import { BadRequestError } from "../../errors";
-import { AppError } from "../../errors/AppError";
 import {
   CreateTaskInput,
   TaskType,
@@ -82,11 +83,7 @@ export async function handleCreateTask(
     res.status(201).json(task);
   } catch (error) {
     console.error("[TASK_CREATE_ERROR]", error);
-    next(
-      error instanceof AppError
-        ? error
-        : new AppError("Failed to create task", 500)
-    );
+    next(error); // Let errorHandler.ts figure out the response
   }
 }
 
@@ -106,7 +103,7 @@ export async function handleGetTasks(
     res.status(200).json(tasks);
   } catch (error) {
     console.error("[TASK_FETCH_ERROR]", error);
-    next(new AppError("Failed to fetch tasks", 500));
+    next(error); // Let errorHandler.ts figure out the response
   }
 }
 
@@ -133,7 +130,7 @@ export async function handleUpdateTask(
     res.status(200).json(updated);
   } catch (error) {
     console.error("[TASK_UPDATE_ERROR]", error);
-    next(new AppError("Failed to update task", 500));
+    next(error);
   }
 }
 
@@ -153,6 +150,49 @@ export async function handleDeleteTask(
     }
 
     console.error("[TASK_DELETE_ERROR]", error);
-    next(new AppError("Failed to delete task", 500));
+    next(error); // Let errorHandler.ts figure out the response
+  }
+}
+
+export async function handleMarkTaskAsDone(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  console.log("PATCH /tasks/:id/complete hit with ID:", req.params.id);
+  const taskId = req.params.id;
+  const userId = req.userId;
+  console.log("[PATCH TASK] incoming task ID:", req.params.id);
+  if (!userId) {
+    return next(new BadRequestError("User ID is required"));
+  }
+
+  try {
+    const updated = await markTaskAsDone(taskId, userId);
+    res.status(200).json(updated);
+  } catch (error) {
+    console.error("[TASK_COMPLETE_ERROR]", error);
+    next(error);
+  }
+}
+
+export async function handleMarkTaskNotDone(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const taskId = req.params.id;
+  const userId = req.userId;
+  console.log("[PATCH TASK] incoming task ID:", req.params.id);
+  if (!userId) {
+    return next(new BadRequestError("User ID is required"));
+  }
+
+  try {
+    const updated = await markTaskAsNotDone(taskId, userId);
+    res.status(200).json(updated);
+  } catch (error) {
+    console.error("[TASK_COMPLETE_ERROR]", error);
+    next(error);
   }
 }

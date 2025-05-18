@@ -3,6 +3,31 @@ import { ErrorRequestHandler } from "express";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../errors/AppError";
 
+/**
+ * 🔖 Common HTTP Status Codes for AppError
+ *
+ * 400 - Bad Request
+ *    → Invalid or missing data sent by client
+ *
+ * 401 - Unauthorized
+ *    → User is not logged in or token is invalid
+ *
+ * 403 - Forbidden
+ *    → Logged-in user does not have permission
+ *
+ * 404 - Not Found
+ *    → Requested resource (e.g. task/user) doesn’t exist
+ *
+ * 409 - Conflict
+ *    → Duplicate entry or state conflict (e.g. task already exists)
+ *
+ * 422 - Unprocessable Entity
+ *    → Semantic validation error (e.g. invalid enum, logic failure)
+ *
+ * 500 - Internal Server Error
+ *    → Unexpected server failure (don't expose details to client)
+ */
+
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   console.error("❌ [Global Error]", err);
 

@@ -39,7 +39,17 @@ describe("Task Update/Delete Routes", () => {
   });
 
   it("should update a task", async () => {
-    const res = await request(app).patch(`/tasks/${taskId}`).send({
+    const task = await prisma.task.create({
+      data: {
+        text: "To update",
+        type: "reminder",
+        userId: "test-user-id",
+        avatar: "https://example.com/photo.png",
+        name: "Update Tester",
+      },
+    });
+
+    const res = await request(app).patch(`/tasks/${task.id}`).send({
       text: "Updated Task Text",
     });
 
@@ -48,7 +58,17 @@ describe("Task Update/Delete Routes", () => {
   });
 
   it("should delete a task", async () => {
-    const res = await request(app).delete(`/tasks/${taskId}`);
+    const task = await prisma.task.create({
+      data: {
+        text: "To delete",
+        type: "reminder",
+        userId: "test-user-id",
+        avatar: "https://example.com/photo.png",
+        name: "Update Tester",
+      },
+    });
+
+    const res = await request(app).delete(`/tasks/${task.id}`);
     expect(res.status).toBe(204);
   });
 

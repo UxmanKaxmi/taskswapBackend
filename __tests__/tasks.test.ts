@@ -40,6 +40,26 @@ describe("Task Routes", () => {
     expect(res.body.text).toBe("Test reminder task");
   });
 
+  it("should mark a reminder task as completed", async () => {
+    const createRes = await request(app).post("/tasks").send({
+      text: "Reminder to complete",
+      type: "reminder",
+      remindAt: new Date().toISOString(),
+      avatar: mockUser.photo,
+      name: mockUser.name,
+    });
+
+    expect(createRes.status).toBe(201);
+    const taskId = createRes.body.id;
+
+    const completeRes = await request(app).patch(`/tasks/${taskId}/complete`);
+    console.log("Complete response:", completeRes.status, completeRes.body);
+
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body).toHaveProperty("completed", true);
+    expect(completeRes.body.id).toBe(taskId);
+  });
+
   it("should create a decision task", async () => {
     const res = await request(app)
       .post("/tasks")
