@@ -63,11 +63,23 @@ export async function createTask(input: CreateTaskInput) {
   });
 }
 
-export function getAllTasks(userId: string) {
-  return prisma.task.findMany({
-    where: { userId },
+export async function getAllTasks(userId: string) {
+  const tasks = await prisma.task.findMany({
+    where: { userId }, // ✅ Only fetch tasks for the logged-in user
     orderBy: { createdAt: "desc" },
   });
+
+  const reminders = await prisma.reminderNote.findMany({
+    where: { senderId: userId },
+    select: { taskId: true },
+  });
+
+  const remindedTaskIds = new Set(reminders.map((r) => r.taskId));
+
+  return tasks.map((task) => ({
+    ...task,
+    hasReminded: remindedTaskIds.has(task.id),
+  }));
 }
 
 export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
