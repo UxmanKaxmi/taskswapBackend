@@ -3,6 +3,8 @@ import express, { Router } from "express"; // ✅ Add Router here
 import cors from "cors";
 import taskRoutes from "./features/task/task.routes";
 import userRoutes from "./features/user/user.routes";
+import reminderNote from "./features/reminderNote/reminderNote.routes";
+
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -19,6 +21,7 @@ app.get("/health", (_req, res) => {
 // ✅ Tell TS explicitly this is a Router
 app.use("/tasks", taskRoutes as Router);
 app.use("/users", userRoutes);
+app.use("/reminderNote", reminderNote as Router);
 
 app.use(errorHandler);
 
