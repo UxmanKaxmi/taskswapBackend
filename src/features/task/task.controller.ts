@@ -15,7 +15,7 @@ import {
   DecisionTaskType,
   MotivationTaskType,
   AdviceTaskType,
-} from "../../types/task.types";
+} from "./task.types";
 
 export async function handleCreateTask(
   req: Request,

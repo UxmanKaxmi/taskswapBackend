@@ -4,6 +4,7 @@ import cors from "cors";
 import taskRoutes from "./features/task/task.routes";
 import userRoutes from "./features/user/user.routes";
 import reminderNote from "./features/reminderNote/reminderNote.routes";
+import notificationRoutes from "./features/notification/notification.routes";
 
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -22,6 +23,7 @@ app.get("/health", (_req, res) => {
 app.use("/tasks", taskRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
+app.use("/notification", notificationRoutes as Router);
 
 app.use(errorHandler);
 

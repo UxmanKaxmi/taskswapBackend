@@ -36,13 +36,41 @@ export async function sendReminderNote({
     throw new BadRequestError("You already sent a reminder for this task.");
   }
 
-  return prisma.reminderNote.create({
+  const reminder = await prisma.reminderNote.create({
     data: {
       taskId,
       senderId,
       message,
     },
   });
+
+  const sender = await prisma.user.findUnique({
+    where: { id: senderId },
+    select: { name: true, photo: true },
+  });
+
+  if (!sender) {
+    throw new BadRequestError("Sender not found.");
+  }
+
+  // ✅ Send notification to task owner
+  await prisma.notification.create({
+    data: {
+      userId: task.userId,
+      senderId,
+      type: "reminder",
+      message: `${sender?.name ?? "Someone"} reminded you about your task.`,
+      metadata: {
+        taskId,
+        senderId,
+        taskText: task.text,
+        senderName: sender.name,
+        senderPhoto: sender.photo,
+      },
+    },
+  });
+
+  return reminder;
 }
 
 export async function getRemindersByTask(
