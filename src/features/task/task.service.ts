@@ -5,7 +5,7 @@ import {
   ReminderTaskType,
   DecisionTaskType,
   MotivationTaskType,
-} from "../../types/task.types";
+} from "./task.types";
 import { HttpStatus } from "../../types/httpStatus";
 
 async function checkDuplicateTask(
@@ -64,18 +64,31 @@ export async function createTask(input: CreateTaskInput) {
 }
 
 export async function getAllTasks(userId: string) {
+  // Step 1: Get IDs of people the user follows
+  const followings = await prisma.follow.findMany({
+    where: { followerId: userId },
+    select: { followingId: true },
+  });
+  const followingIds = followings.map((f) => f.followingId);
+
+  // Step 2: Get tasks by self + followed users
   const tasks = await prisma.task.findMany({
-    where: { userId }, // ✅ Only fetch tasks for the logged-in user
+    where: {
+      userId: {
+        in: [userId, ...followingIds],
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
 
+  // Step 3: Get all reminder notes sent by current user
   const reminders = await prisma.reminderNote.findMany({
     where: { senderId: userId },
     select: { taskId: true },
   });
-
   const remindedTaskIds = new Set(reminders.map((r) => r.taskId));
 
+  // Step 4: Mark each task if user has reminded it
   return tasks.map((task) => ({
     ...task,
     hasReminded: remindedTaskIds.has(task.id),

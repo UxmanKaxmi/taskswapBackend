@@ -1,10 +1,15 @@
 import { Request, Response, NextFunction } from "express";
-import { matchUsersByEmail, syncUserToDB } from "./user.service";
+import {
+  getFollowers,
+  getFollowing,
+  matchUsersByEmail,
+  syncUserToDB,
+  toggleFollowUser,
+} from "./user.service";
 import jwt from "jsonwebtoken";
 import { User } from "@prisma/client";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
-import { prisma } from "../../db/client";
 
 export async function handleSyncUser(
   req: Request,
@@ -44,14 +49,108 @@ export async function handleMatchUsers(
   next: NextFunction
 ) {
   const { emails } = req.body;
+  const followerId = req.userId;
+
   if (!Array.isArray(emails)) {
     return next(new AppError("`emails` must be an array", 400));
   }
 
   try {
-    const users = await matchUsersByEmail(emails);
+    const users = await matchUsersByEmail(emails, followerId);
     res.json(users);
-  } catch (err) {
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
     next(new AppError("Failed to match users", 500));
+  }
+}
+
+// export async function handleFollowUser(
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) {
+//   try {
+//     if (!req.userId) {
+//       return next(new AppError("Unauthorized: Missing user ID", 401));
+//     }
+
+//     const followerId = req.userId;
+//     const { followingId } = req.body || {};
+
+//     if (!followingId) {
+//       return next(new AppError("Missing `followingId`", 400));
+//     }
+
+//     const result = await followUser(followerId, followingId);
+//     res.status(201).json(result);
+//   } catch (error) {
+//     if (error instanceof AppError) return next(error);
+//     next(new AppError("Failed to follow user", 500));
+//   }
+// }
+
+// export async function handleUnfollowUser(
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) {
+//   try {
+//     const followerId = req.userId;
+//     const { followingId } = req.body;
+
+//     if (!followingId) {
+//       return next(new AppError("Missing `followingId`", 400));
+//     }
+
+//     const result = await unfollowUser(followerId, followingId);
+//     res.status(200).json(result);
+//   } catch (error) {
+//     if (error instanceof AppError) return next(error);
+//     next(new AppError("Failed to unfollow user", 500));
+//   }
+// }
+
+export async function handleToggleFollowUser(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const followerId = req.userId;
+    const followingId = req.params.userId;
+
+    const result = await toggleFollowUser(followerId, followingId);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new AppError("Failed to toggle follow", 500));
+  }
+}
+
+export async function handleGetFollowers(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const followers = await getFollowers(req.userId);
+    res.status(200).json(followers); // ✅ Already contains `isFollowing`
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new AppError("Failed to fetch followers", 500));
+  }
+}
+
+export async function handleGetFollowing(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const following = await getFollowing(req.userId);
+    res.status(200).json(following);
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new AppError("Failed to fetch following", 500));
   }
 }

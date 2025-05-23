@@ -19,23 +19,30 @@ model Task {
   options   String[]  @default([]) // For decisions (poll options)
   deliverAt DateTime? // For motivation (scheduled delivery)
 
-  avatar String @default("")
-  name   String @default("")
+  avatar    String  @default("")
+  name      String  @default("")
+  completed Boolean @default(false)
 
-  completed    Boolean        @default(false) // ✅ New field
   ReminderNote ReminderNote[]
 
   @@unique([text, userId])
 }
 
 model User {
-  id           String         @id
-  email        String         @unique
-  name         String
-  photo        String?
-  createdAt    DateTime       @default(now())
+  id        String   @id
+  email     String   @unique
+  name      String
+  photo     String?
+  createdAt DateTime @default(now())
+
   tasks        Task[]
   ReminderNote ReminderNote[]
+
+  followers Follow[] @relation("FollowedBy")
+  following Follow[] @relation("Following")
+
+  notifications     Notification[] @relation("UserNotifications")
+  sentNotifications Notification[] @relation("SenderNotifications")
 }
 
 model ReminderNote {
@@ -47,6 +54,33 @@ model ReminderNote {
 
   task   Task @relation(fields: [taskId], references: [id])
   sender User @relation(fields: [senderId], references: [id])
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  follower    User     @relation("FollowedBy", fields: [followerId], references: [id])
+  followerId  String
+  following   User     @relation("Following", fields: [followingId], references: [id])
+  followingId String
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model Notification {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation("UserNotifications", fields: [userId], references: [id])
+
+  senderId String?
+  sender   User?   @relation("SenderNotifications", fields: [senderId], references: [id])
+
+  type      String
+  message   String
+  read      Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
 }
 
 enum TaskType {

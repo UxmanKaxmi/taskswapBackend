@@ -18,8 +18,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "cross-env DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test?schema=public\" prisma migrate reset --force --skip-generate && jest",
-    "test:reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
-    "seed": "ts-node --esm prisma/seed.ts"
+    "test-reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
+    "db:migrate": "npx prisma migrate dev --name init && npx prisma generate",
+    "seed": "ts-node --esm prisma/seed.ts",
+    "create:feature": "ts-node scripts/createFeature.ts",
+    "db-reset": "npx prisma migrate reset --force"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
