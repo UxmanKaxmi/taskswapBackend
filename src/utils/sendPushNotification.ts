@@ -2,12 +2,10 @@
 import admin from "firebase-admin";
 import path from "path";
 
-const serviceAccount = require(path.resolve("firebase-adminsdk.json")); // or use process.env if env-based
+const serviceAccount = require("/etc/secrets/firebase-adminsdk.json");
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 export async function sendPushNotification(
