@@ -8,16 +8,18 @@ export async function syncUserToDB({
   email,
   name,
   photo,
+  fcmToken,
 }: {
   id: string;
   email: string;
   name: string;
   photo?: string;
+  fcmToken?: string;
 }) {
   return prisma.user.upsert({
     where: { id },
-    update: { name, email, photo },
-    create: { id, name, email, photo },
+    update: { name, email, photo, fcmToken },
+    create: { id, name, email, photo, fcmToken },
   });
 }
 
@@ -52,48 +54,6 @@ export async function matchUsersByEmail(emails: string[], followerId: string) {
     isFollowing: followedIds.has(user.id),
   }));
 }
-
-// export async function followUser(followerId: string, followingId: string) {
-//   console.log("[followUser] incoming:", { followerId, followingId });
-
-//   if (followerId === followingId) {
-//     throw new AppError("You cannot follow yourself.", HttpStatus.BAD_REQUEST);
-//   }
-
-//   const existing = await prisma.follow.findUnique({
-//     where: {
-//       followerId_followingId: {
-//         followerId,
-//         followingId,
-//       },
-//     },
-//   });
-
-//   console.log("[followUser] existing follow:", existing);
-
-//   if (existing) {
-//     throw new AppError("You already follow this user.", HttpStatus.CONFLICT);
-//   }
-
-//   const follow = await prisma.follow.create({
-//     data: { followerId, followingId },
-//   });
-
-//   console.log("[followUser] follow created:", follow);
-
-//   return { success: true };
-// }
-
-// export async function unfollowUser(followerId: string, followingId: string) {
-//   await prisma.follow.deleteMany({
-//     where: {
-//       followerId,
-//       followingId,
-//     },
-//   });
-
-//   return { success: true };
-// }
 
 export async function toggleFollowUser(
   followerId: string,
@@ -210,4 +170,66 @@ export async function getFollowing(userId: string) {
       ...f.following,
       isFollowing: true,
     }));
+}
+
+export async function getUserById(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      photo: true,
+      createdAt: true,
+    },
+  });
+}
+
+export async function getFollowersCount(userId: string) {
+  return prisma.follow.count({
+    where: { followingId: userId },
+  });
+}
+
+export async function getFollowingCount(userId: string) {
+  return prisma.follow.count({
+    where: { followerId: userId },
+  });
+}
+
+export async function getTaskStatsForUser(userId: string) {
+  const tasks = await prisma.task.findMany({
+    where: { userId },
+    select: {
+      completed: true,
+      completedAt: true, // ✅ THIS LINE IS REQUIRED
+    },
+  });
+
+  const total = tasks.length;
+  const completedTasks = tasks.filter((t) => t.completed).length;
+  const successRate =
+    total === 0 ? 0 : Math.round((completedTasks / total) * 100);
+
+  // Collect all unique YYYY-MM-DD dates for completed tasks
+  const completedDates = new Set(
+    tasks
+      .filter((t) => t.completed && t.completedAt)
+      .map((t) => t.completedAt!.toISOString().split("T")[0])
+  );
+
+  // Calculate streak: consecutive days ending today
+  let streak = 0;
+  let currentDate = new Date();
+
+  while (completedDates.has(currentDate.toISOString().split("T")[0])) {
+    streak++;
+    currentDate.setDate(currentDate.getDate() - 1);
+  }
+
+  return {
+    tasksDone: completedTasks,
+    successRate,
+    dayStreak: streak,
+  };
 }

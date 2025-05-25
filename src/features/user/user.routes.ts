@@ -3,6 +3,7 @@ import { verifyGoogleToken } from "../../middleware/verifyGoogleToken";
 import {
   handleGetFollowers,
   handleGetFollowing,
+  handleGetMe,
   handleMatchUsers,
   handleSyncUser,
   handleToggleFollowUser,
@@ -19,4 +20,5 @@ router.post("/match", handleMatchUsers);
 router.get("/toggleFollow/:userId", requireAuth, handleToggleFollowUser);
 router.get("/followers", requireAuth, handleGetFollowers);
 router.get("/following", requireAuth, handleGetFollowing);
+router.get("/me", requireAuth, handleGetMe);
 export default router;
