@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import {
   getFollowers,
   getFollowing,
+  getUserById,
   matchUsersByEmail,
   syncUserToDB,
   toggleFollowUser,
@@ -11,12 +12,18 @@ import { User } from "@prisma/client";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
 
+import {
+  getFollowersCount,
+  getFollowingCount,
+  getTaskStatsForUser,
+} from "./user.service";
+
 export async function handleSyncUser(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const { id, email, name, photo } = req.body;
+  const { id, email, name, photo, fcmToken } = req.body;
 
   console.log("[HANDLE_SYNC_USER] Request body:", req.body);
 
@@ -26,7 +33,7 @@ export async function handleSyncUser(
   }
 
   try {
-    const user: User = await syncUserToDB({ id, email, name, photo });
+    const user: User = await syncUserToDB({ id, email, name, photo, fcmToken });
 
     console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
 
@@ -152,5 +159,36 @@ export async function handleGetFollowing(
   } catch (error) {
     if (error instanceof AppError) return next(error);
     next(new AppError("Failed to fetch following", 500));
+  }
+}
+
+export async function handleGetMe(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.userId;
+    if (!userId) return next(new AppError("Unauthorized", 401));
+
+    const user = await getUserById(userId);
+    if (!user) return next(new AppError("User not found", 404));
+
+    const [followersCount, followingCount, taskStats] = await Promise.all([
+      getFollowersCount(userId),
+      getFollowingCount(userId),
+      getTaskStatsForUser(userId),
+    ]);
+
+    res.status(200).json({
+      ...user,
+      followersCount,
+      followingCount,
+      taskSuccessRate: taskStats.successRate,
+      tasksDone: taskStats.tasksDone,
+      dayStreak: taskStats.dayStreak,
+    });
+  } catch (err) {
+    next(new AppError("Failed to fetch user profile", 500));
   }
 }

@@ -16,6 +16,8 @@ import {
   MotivationTaskType,
   AdviceTaskType,
 } from "./task.types";
+import { taskSchema, taskUpdateSchema } from "./task.schema";
+import { ZodError } from "zod";
 
 export async function handleCreateTask(
   req: Request,
@@ -23,67 +25,32 @@ export async function handleCreateTask(
   next: NextFunction
 ): Promise<void> {
   const userId = req.userId;
-  const { type, text, remindAt, options, deliverAt, avatar } = req.body;
 
-  if (!userId || !text || !type) {
-    return next(new BadRequestError("Missing task text, type, or user ID"));
+  if (!userId) {
+    return next(new BadRequestError("User ID is missing"));
   }
 
-  let taskInput: CreateTaskInput;
-
   try {
-    switch (type as TaskType) {
-      case "reminder":
-        if (!remindAt) {
-          throw new BadRequestError("Missing remindAt for reminder task");
-        }
-        taskInput = {
-          type,
-          text,
-          userId,
-          remindAt,
-          avatar,
-        } satisfies ReminderTaskType;
-        break;
+    const parsed = taskSchema.parse(req.body); // Validated and type-safe
 
-      case "decision":
-        if (!options || !Array.isArray(options) || options.length < 2) {
-          throw new BadRequestError(
-            "Decision tasks must have at least two options"
-          );
-        }
-        taskInput = {
-          type,
-          text,
-          userId,
-          options,
-          avatar,
-        } satisfies DecisionTaskType;
-        break;
-
-      case "motivation":
-        taskInput = {
-          type,
-          text,
-          userId,
-          deliverAt,
-          avatar,
-        } satisfies MotivationTaskType;
-        break;
-
-      case "advice":
-        taskInput = { type, text, userId, avatar } satisfies AdviceTaskType;
-        break;
-
-      default:
-        throw new BadRequestError("Invalid task type");
-    }
+    const taskInput: CreateTaskInput = {
+      ...parsed,
+      userId,
+    };
 
     const task = await createTask(taskInput);
     res.status(201).json(task);
   } catch (error) {
     console.error("[TASK_CREATE_ERROR]", error);
-    next(error); // Let errorHandler.ts figure out the response
+
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: "Validation error",
+        issues: error.errors,
+      });
+    }
+
+    next(error);
   }
 }
 
@@ -113,23 +80,26 @@ export async function handleUpdateTask(
   next: NextFunction
 ): Promise<void> {
   const { id } = req.params;
-  const { text, type, remindAt, options, deliverAt } = req.body;
-
-  if (!text && !type && !remindAt && !options && !deliverAt) {
-    res.status(400).json({ error: "Nothing to update" });
-  }
 
   try {
-    const updated = await updateTask(id, {
-      text,
-      type,
-      remindAt,
-      options,
-      deliverAt,
-    });
+    const parsed = taskUpdateSchema.parse(req.body);
+
+    if (Object.keys(parsed).length === 0) {
+      res.status(400).json({ error: "Nothing to update" });
+    }
+
+    const updated = await updateTask(id, parsed);
     res.status(200).json(updated);
   } catch (error) {
     console.error("[TASK_UPDATE_ERROR]", error);
+
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: "Validation error",
+        issues: error.errors,
+      });
+    }
+
     next(error);
   }
 }

@@ -1,5 +1,6 @@
 // src/features/reminderNote/reminderNote.service.ts
 
+import { sendPushNotification } from "../../utils/sendPushNotification";
 import { prisma } from "../../db/client";
 import { BadRequestError } from "../../errors";
 import { ReminderNoteDTO, SendReminderNoteInput } from "./reminderNote.types";
@@ -15,7 +16,30 @@ export async function sendReminderNote({
 
   const task = await prisma.task.findUnique({
     where: { id: taskId },
+    select: {
+      userId: true,
+      text: true,
+      user: {
+        select: { fcmToken: true },
+      },
+    },
   });
+
+  if (!task) {
+    throw new BadRequestError("Task not found.");
+  }
+
+  if (task.userId === senderId) {
+    throw new BadRequestError("You cannot remind yourself.");
+  }
+
+  if (task.user?.fcmToken) {
+    await sendPushNotification(
+      task.user.fcmToken,
+      "⏰ You got a reminder!",
+      message
+    );
+  }
 
   if (!task) {
     throw new BadRequestError("Task not found.");

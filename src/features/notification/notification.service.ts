@@ -1,3 +1,4 @@
+import { sendPushNotification } from "../../utils/sendPushNotification";
 import { prisma } from "../../db/client";
 
 export async function getUserNotifications(userId: string) {
@@ -28,4 +29,21 @@ export async function markNotificationAsRead(notificationId: string) {
     where: { id: notificationId },
     data: { read: true },
   });
+}
+
+export async function sendTestNotification(
+  userId: string,
+  title: string,
+  body: string
+) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fcmToken: true }, // ✅ Will work only if schema has this field
+  });
+  console.log("🎯 Token:", user?.fcmToken);
+  if (!user?.fcmToken) {
+    throw new Error("User or FCM token not found");
+  }
+
+  await sendPushNotification(user.fcmToken, title, body);
 }

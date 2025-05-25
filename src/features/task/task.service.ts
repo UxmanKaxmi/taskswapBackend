@@ -7,6 +7,7 @@ import {
   MotivationTaskType,
 } from "./task.types";
 import { HttpStatus } from "../../types/httpStatus";
+import { schedulePush } from "../../utils/scheduleReminderPush";
 
 async function checkDuplicateTask(
   text: string,
@@ -32,7 +33,7 @@ export async function createTask(input: CreateTaskInput) {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { photo: true, name: true },
+    select: { name: true, photo: true, fcmToken: true },
   });
 
   if (!user) {
@@ -45,15 +46,17 @@ export async function createTask(input: CreateTaskInput) {
   const avatar = input.avatar ?? user.photo ?? undefined;
   const name = user.name;
 
-  return prisma.task.create({
+  const remindAt =
+    type === "reminder" ? (input as ReminderTaskType).remindAt : undefined;
+
+  const createdTask = await prisma.task.create({
     data: {
       text,
       type,
       userId,
       avatar,
       name,
-      remindAt:
-        type === "reminder" ? (input as ReminderTaskType).remindAt : undefined,
+      remindAt,
       options: type === "decision" ? (input as DecisionTaskType).options : [],
       deliverAt:
         type === "motivation"
@@ -61,6 +64,21 @@ export async function createTask(input: CreateTaskInput) {
           : undefined,
     },
   });
+
+  // ✅ Schedule push if reminder task with valid time
+  if (type === "reminder" && remindAt) {
+    const delayMs = new Date(remindAt).getTime() - Date.now();
+    if (delayMs > 0 && user.fcmToken) {
+      schedulePush(
+        delayMs,
+        user.fcmToken,
+        "✅ Reminder Complete",
+        `It’s time to act on your task: “${text}”`
+      );
+    }
+  }
+
+  return createdTask;
 }
 
 export async function getAllTasks(userId: string) {

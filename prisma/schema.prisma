@@ -19,9 +19,10 @@ model Task {
   options   String[]  @default([]) // For decisions (poll options)
   deliverAt DateTime? // For motivation (scheduled delivery)
 
-  avatar    String  @default("")
-  name      String  @default("")
-  completed Boolean @default(false)
+  avatar      String    @default("")
+  name        String    @default("")
+  completed   Boolean   @default(false)
+  completedAt DateTime? // ✅ Add this line
 
   ReminderNote ReminderNote[]
 
@@ -43,6 +44,7 @@ model User {
 
   notifications     Notification[] @relation("UserNotifications")
   sentNotifications Notification[] @relation("SenderNotifications")
+  fcmToken          String? // ✅ Add this line
 }
 
 model ReminderNote {
