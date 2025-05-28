@@ -14,13 +14,17 @@ export const requireAuth = (
   }
 
   const token = authHeader.split(" ")[1];
-  // console.log("[Token]", token);
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string;
     };
-    req.userId = decoded.userId;
+
+    // ✅ Set as req.user for consistent usage
+    req.user = { id: decoded.userId };
+    console.log("✅ Decoded token:", decoded);
+    console.log("✅ req.user:", req.user);
+
     next();
   } catch (err) {
     console.error("[JWT ERROR]", err);

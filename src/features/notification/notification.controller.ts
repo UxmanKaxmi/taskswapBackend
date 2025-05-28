@@ -11,7 +11,11 @@ export async function handleGetNotifications(
   next: NextFunction
 ) {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(400).json({ message: "Missing userId" });
+      return;
+    }
     const notifications = await getUserNotifications(userId);
     res.status(200).json(notifications);
   } catch (error) {
