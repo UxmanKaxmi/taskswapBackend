@@ -12,7 +12,7 @@ export async function handleSendReminderNote(
   try {
     const { message } = req.body;
     const taskId = req.params.id;
-    const senderId = req.userId;
+    const senderId = req.user?.id;
     if (!senderId) {
       return next(new BadRequestError("User ID is missing from request."));
     }
@@ -31,7 +31,7 @@ export async function handleGetRemindersByTask(
 ) {
   try {
     const taskId = req.params.id;
-    const userId = req.userId;
+    const userId = req.user?.id;
 
     const notes = await getRemindersByTask(taskId, userId);
     res.status(200).json(notes);

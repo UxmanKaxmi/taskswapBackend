@@ -24,7 +24,7 @@ export async function handleCreateTask(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const userId = req.userId;
+  const userId = req.user?.id;
 
   if (!userId) {
     return next(new BadRequestError("User ID is missing"));
@@ -59,7 +59,7 @@ export async function handleGetTasks(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const userId = req.userId;
+  const userId = req.user?.id;
 
   if (!userId) {
     return next(new BadRequestError("User ID is required"));
@@ -131,7 +131,7 @@ export async function handleMarkTaskAsDone(
 ): Promise<void> {
   console.log("PATCH /tasks/:id/complete hit with ID:", req.params.id);
   const taskId = req.params.id;
-  const userId = req.userId;
+  const userId = req.user?.id;
   console.log("[PATCH TASK] incoming task ID:", req.params.id);
   if (!userId) {
     return next(new BadRequestError("User ID is required"));
@@ -152,7 +152,7 @@ export async function handleMarkTaskNotDone(
   next: NextFunction
 ): Promise<void> {
   const taskId = req.params.id;
-  const userId = req.userId;
+  const userId = req.user?.id;
   console.log("[PATCH TASK] incoming task ID:", req.params.id);
   if (!userId) {
     return next(new BadRequestError("User ID is required"));

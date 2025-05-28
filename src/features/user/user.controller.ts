@@ -4,6 +4,7 @@ import {
   getFollowing,
   getUserById,
   matchUsersByEmail,
+  searchFriendsService,
   syncUserToDB,
   toggleFollowUser,
 } from "./user.service";
@@ -56,14 +57,17 @@ export async function handleMatchUsers(
   next: NextFunction
 ) {
   const { emails } = req.body;
-  const followerId = req.userId;
-
+  const userId = req.user?.id;
+  console.log("🔐 userId:", req.user?.id);
   if (!Array.isArray(emails)) {
     return next(new AppError("`emails` must be an array", 400));
   }
+  if (!userId) {
+    return next(new AppError("Unauthorized", 401));
+  }
 
   try {
-    const users = await matchUsersByEmail(emails, followerId);
+    const users = await matchUsersByEmail(emails, userId);
     res.json(users);
   } catch (error) {
     if (error instanceof AppError) return next(error);
@@ -81,7 +85,7 @@ export async function handleMatchUsers(
 //       return next(new AppError("Unauthorized: Missing user ID", 401));
 //     }
 
-//     const followerId = req.userId;
+//     const userId = req.user?.id;;
 //     const { followingId } = req.body || {};
 
 //     if (!followingId) {
@@ -102,7 +106,7 @@ export async function handleMatchUsers(
 //   next: NextFunction
 // ) {
 //   try {
-//     const followerId = req.userId;
+//     const userId = req.user?.id;;
 //     const { followingId } = req.body;
 
 //     if (!followingId) {
@@ -122,10 +126,18 @@ export async function handleToggleFollowUser(
   res: Response,
   next: NextFunction
 ) {
-  try {
-    const followerId = req.userId;
-    const followingId = req.params.userId;
+  const followerId = req.user?.id;
+  const followingId = req.params.userId;
 
+  if (followerId === followingId) {
+    throw new AppError("You cannot follow yourself", 400);
+  }
+
+  if (!followerId) {
+    return next(new AppError("Unauthorized", 401));
+  }
+
+  try {
     const result = await toggleFollowUser(followerId, followingId);
     res.status(200).json(result);
   } catch (error) {
@@ -140,10 +152,13 @@ export async function handleGetFollowers(
   next: NextFunction
 ) {
   try {
-    const followers = await getFollowers(req.userId);
-    res.status(200).json(followers); // ✅ Already contains `isFollowing`
+    if (!req.user?.id) {
+      return next(new AppError("Unauthorized: Missing user ID", 401));
+    }
+
+    const followers = await getFollowers(req.user?.id);
+    res.status(200).json(followers);
   } catch (error) {
-    if (error instanceof AppError) return next(error);
     next(new AppError("Failed to fetch followers", 500));
   }
 }
@@ -154,10 +169,14 @@ export async function handleGetFollowing(
   next: NextFunction
 ) {
   try {
-    const following = await getFollowing(req.userId);
+    if (!req.user?.id) {
+      return next(new AppError("Unauthorized: Missing user ID", 401));
+    }
+
+    const following = await getFollowing(req.user?.id);
+    console.log("💥 Backend userId:", req.user?.id);
     res.status(200).json(following);
   } catch (error) {
-    if (error instanceof AppError) return next(error);
     next(new AppError("Failed to fetch following", 500));
   }
 }
@@ -168,7 +187,7 @@ export async function handleGetMe(
   next: NextFunction
 ) {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
     if (!userId) return next(new AppError("Unauthorized", 401));
 
     const user = await getUserById(userId);
@@ -190,5 +209,34 @@ export async function handleGetMe(
     });
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
+  }
+}
+
+export async function searchFriends(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const { query, includeFollowed = "false" } = req.query;
+  const userId = req.user?.id;
+
+  if (!query || typeof query !== "string") {
+    return next(new BadRequestError("Query is required"));
+  }
+
+  if (!userId || typeof userId !== "string") {
+    return next(new BadRequestError("Unauthorized: Missing user ID"));
+  }
+
+  try {
+    const friends = await searchFriendsService(
+      userId,
+      query,
+      includeFollowed === "true"
+    );
+    res.status(200).json({ friends });
+  } catch (error) {
+    console.error("[SEARCH_FRIENDS_ERROR]", error);
+    next(new AppError("Failed to search friends", 500));
   }
 }

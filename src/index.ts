@@ -12,14 +12,13 @@ const app = express();
 const PORT = 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // ✅ Needed to populate req.body
 
 // Health-check endpoint for uptime monitoring
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true, timestamp: Date.now() });
 });
 
-// ✅ Tell TS explicitly this is a Router
 app.use("/tasks", taskRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
