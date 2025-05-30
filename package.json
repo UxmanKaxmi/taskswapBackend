@@ -17,7 +17,7 @@
   },
   "scripts": {
     "dev": "NODE_ENV=development ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "prisma generate && prisma migrate deploy && tsc",
+    "build": "prisma generate && prisma db push && tsc",
     "start": "node dist/index.js",
     "test": "cross-env DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test?schema=public\" prisma migrate reset --force --skip-generate && jest",
     "test-reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
