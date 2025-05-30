@@ -14,12 +14,11 @@ const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
 const PORT = 3001;
 app.use((0, cors_1.default)());
-app.use(express_1.default.json());
+app.use(express_1.default.json()); // ✅ Needed to populate req.body
 // Health-check endpoint for uptime monitoring
 app.get("/health", (_req, res) => {
     res.status(200).json({ ok: true, timestamp: Date.now() });
 });
-// ✅ Tell TS explicitly this is a Router
 app.use("/tasks", task_routes_1.default);
 app.use("/users", user_routes_1.default);
 app.use("/reminderNote", reminderNote_routes_1.default);
