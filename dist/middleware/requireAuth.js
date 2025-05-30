@@ -12,10 +12,12 @@ const requireAuth = (req, res, next) => {
         return;
     }
     const token = authHeader.split(" ")[1];
-    // console.log("[Token]", token);
     try {
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.userId;
+        // ✅ Set as req.user for consistent usage
+        req.user = { id: decoded.userId };
+        console.log("✅ Decoded token:", decoded);
+        console.log("✅ req.user:", req.user);
         next();
     }
     catch (err) {

@@ -7,11 +7,15 @@ exports.sendPushNotification = sendPushNotification;
 // src/utils/sendPushNotification.ts
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const path_1 = __importDefault(require("path"));
-const serviceAccount = require(path_1.default.resolve("firebase-adminsdk.json")); // or use process.env if env-based
+let serviceAccount;
+if (process.env.NODE_ENV === "production") {
+    serviceAccount = require("/etc/secrets/firebase-adminsdk.json");
+}
+else {
+    serviceAccount = require(path_1.default.resolve("firebase-adminsdk.json"));
+}
 if (!firebase_admin_1.default.apps.length) {
-    firebase_admin_1.default.initializeApp({
-        credential: firebase_admin_1.default.credential.cert(serviceAccount),
-    });
+    firebase_admin_1.default.initializeApp({ credential: firebase_admin_1.default.credential.cert(serviceAccount) });
 }
 async function sendPushNotification(token, title, body) {
     console.log("📲 Sending push to:", token, title, body);
