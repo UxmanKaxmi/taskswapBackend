@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import {
   getUserNotifications,
   markNotificationAsRead,
+  markNotificationsAsRead,
   sendTestNotification,
 } from "./notification.service";
 
@@ -32,6 +33,25 @@ export async function handleMarkNotificationAsRead(
     const notificationId = req.params.id;
     const result = await markNotificationAsRead(notificationId);
     res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ✅ Mark multiple notifications as read
+export async function handleBatchMarkNotificationsAsRead(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ message: "Invalid or missing 'ids' array" });
+    }
+
+    await markNotificationsAsRead(ids);
+    res.status(200).json({ message: "Notifications marked as read" });
   } catch (error) {
     next(error);
   }

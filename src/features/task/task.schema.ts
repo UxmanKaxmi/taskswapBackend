@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const helpersSchema = z.array(z.string()).optional();
+
 export const baseTaskSchema = z.object({
   text: z.string().min(1),
   type: z.enum(["reminder", "decision", "motivation", "advice"]),
@@ -9,11 +11,13 @@ export const baseTaskSchema = z.object({
 export const reminderTaskSchema = baseTaskSchema.extend({
   type: z.literal("reminder"),
   remindAt: z.preprocess((val) => new Date(val as string), z.date()),
+  helpers: helpersSchema, // ✅
 });
 
 export const decisionTaskSchema = baseTaskSchema.extend({
   type: z.literal("decision"),
   options: z.array(z.string()).min(2, "At least two options are required"),
+  // ❌ no helpers
 });
 
 export const motivationTaskSchema = baseTaskSchema.extend({
@@ -24,10 +28,12 @@ export const motivationTaskSchema = baseTaskSchema.extend({
       z.date().nullable()
     )
     .optional(),
+  helpers: helpersSchema, // ✅
 });
 
 export const adviceTaskSchema = baseTaskSchema.extend({
   type: z.literal("advice"),
+  helpers: helpersSchema, // ✅
 });
 
 export const taskSchema = z.discriminatedUnion("type", [
@@ -37,10 +43,6 @@ export const taskSchema = z.discriminatedUnion("type", [
   adviceTaskSchema,
 ]);
 
-// TypeScript inference
-export type CreateTaskSchemaInput = z.infer<typeof taskSchema>;
-
-// Partial base schema
 const baseUpdateSchema = z.object({
   text: z.string().optional(),
   type: z.enum(["reminder", "decision", "motivation", "advice"]).optional(),
@@ -48,17 +50,18 @@ const baseUpdateSchema = z.object({
   name: z.string().optional(),
 });
 
-// Optional extensions
 const reminderUpdateSchema = baseUpdateSchema.extend({
   type: z.literal("reminder").optional(),
   remindAt: z
     .preprocess((val) => (val ? new Date(val as string) : undefined), z.date())
     .optional(),
+  helpers: helpersSchema, // ✅
 });
 
 const decisionUpdateSchema = baseUpdateSchema.extend({
   type: z.literal("decision").optional(),
   options: z.array(z.string()).min(2).optional(),
+  // ❌ no helpers
 });
 
 const motivationUpdateSchema = baseUpdateSchema.extend({
@@ -69,10 +72,12 @@ const motivationUpdateSchema = baseUpdateSchema.extend({
       z.date().nullable()
     )
     .optional(),
+  helpers: helpersSchema, // ✅
 });
 
 const adviceUpdateSchema = baseUpdateSchema.extend({
   type: z.literal("advice").optional(),
+  helpers: helpersSchema, // ✅
 });
 
 export const taskUpdateSchema = z.union([
@@ -82,4 +87,5 @@ export const taskUpdateSchema = z.union([
   adviceUpdateSchema,
 ]);
 
+export type CreateTaskSchemaInput = z.infer<typeof taskSchema>;
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>;

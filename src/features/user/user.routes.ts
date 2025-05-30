@@ -4,6 +4,7 @@ import {
   handleGetFollowers,
   handleGetFollowing,
   handleGetMe,
+  handleGetUserProfile,
   handleMatchUsers,
   handleSyncUser,
   handleToggleFollowUser,
@@ -24,5 +25,6 @@ router.get("/following", requireAuth, handleGetFollowing);
 router.get("/me", requireAuth, handleGetMe);
 
 router.get("/search-friends", requireAuth, searchFriends);
+router.get("/:id/profile", requireAuth, handleGetUserProfile);
 
 export default router;
