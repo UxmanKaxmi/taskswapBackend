@@ -12,6 +12,7 @@ import jwt from "jsonwebtoken";
 import { User } from "@prisma/client";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
+import { getUserProfileById } from "./user.service";
 
 import {
   getFollowersCount,
@@ -238,5 +239,28 @@ export async function searchFriends(
   } catch (error) {
     console.error("[SEARCH_FRIENDS_ERROR]", error);
     next(new AppError("Failed to search friends", 500));
+  }
+}
+
+export async function handleGetUserProfile(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const targetUserId = req.params.id;
+  const currentUserId = req.user?.id;
+
+  if (!targetUserId || !currentUserId) {
+    return next(new AppError("Invalid user ID", 400));
+  }
+
+  try {
+    const profile = await getUserProfileById(targetUserId, currentUserId);
+    res.status(200).json(profile);
+  } catch (error) {
+    console.error("[GET_USER_PROFILE_ERROR]", error);
+    next(
+      error instanceof AppError ? error : new AppError("Unexpected error", 500)
+    );
   }
 }

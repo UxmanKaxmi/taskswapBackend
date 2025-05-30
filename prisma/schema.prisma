@@ -23,6 +23,7 @@ model Task {
   name        String    @default("")
   completed   Boolean   @default(false)
   completedAt DateTime? // ✅ Add this line
+  helpers     User[]    @relation("TaskHelpers")
 
   ReminderNote ReminderNote[]
 
@@ -45,6 +46,7 @@ model User {
   notifications     Notification[] @relation("UserNotifications")
   sentNotifications Notification[] @relation("SenderNotifications")
   fcmToken          String? // ✅ Add this line
+  helping           Task[]         @relation("TaskHelpers")
 }
 
 model ReminderNote {

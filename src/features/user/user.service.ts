@@ -23,6 +23,42 @@ export async function syncUserToDB({
   });
 }
 
+export async function getMutualFriends(
+  currentUserId: string,
+  targetUserId: string
+) {
+  const [currentFollowing, targetFollowing] = await Promise.all([
+    prisma.follow.findMany({
+      where: { followerId: currentUserId },
+      select: { followingId: true },
+    }),
+    prisma.follow.findMany({
+      where: { followerId: targetUserId },
+      select: { followingId: true },
+    }),
+  ]);
+
+  const currentSet = new Set(currentFollowing.map((f) => f.followingId));
+  const mutualIds = targetFollowing
+    .map((f) => f.followingId)
+    .filter((id) => currentSet.has(id));
+
+  if (mutualIds.length === 0) return [];
+
+  const mutuals = await prisma.user.findMany({
+    where: { id: { in: mutualIds } },
+    select: {
+      id: true,
+      name: true,
+      photo: true,
+      email: true,
+    },
+    take: 5,
+  });
+
+  return mutuals;
+}
+
 export async function matchUsersByEmail(emails: string[], followerId: string) {
   const users = await prisma.user.findMany({
     where: {
@@ -298,4 +334,86 @@ export async function searchFriendsService(
       ...user,
       isFollowing: followingIdSet.has(user.id),
     }));
+}
+
+export async function getUserProfileById(
+  targetUserId: string,
+  currentUserId: string
+) {
+  const user = await getUserById(targetUserId);
+
+  if (!user) {
+    throw new AppError("User not found", HttpStatus.NOT_FOUND);
+  }
+
+  const [
+    followersCount,
+    followingCount,
+    taskStats,
+    recentTasks,
+    mutualFriends,
+  ] = await Promise.all([
+    getFollowersCount(targetUserId),
+    getFollowingCount(targetUserId),
+    getTaskStatsForUser(targetUserId),
+    prisma.task.findMany({
+      where: { userId: targetUserId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        text: true,
+        type: true,
+        createdAt: true,
+        completed: true,
+        remindAt: true,
+        options: true,
+        deliverAt: true,
+        helpers: {
+          select: {
+            id: true,
+            name: true,
+            photo: true,
+          },
+        },
+      },
+    }),
+    getMutualFriends(currentUserId, targetUserId), // ✅ added
+  ]);
+
+  const [isFollowing, isFollowedBy] = await Promise.all([
+    prisma.follow.findUnique({
+      where: {
+        followerId_followingId: {
+          followerId: currentUserId,
+          followingId: targetUserId,
+        },
+      },
+    }),
+    prisma.follow.findUnique({
+      where: {
+        followerId_followingId: {
+          followerId: targetUserId,
+          followingId: currentUserId,
+        },
+      },
+    }),
+  ]);
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    photo: user.photo,
+    bio: null,
+    followersCount,
+    followingCount,
+    isFollowing: !!isFollowing,
+    isFollowedBy: !!isFollowedBy,
+    recentTasks,
+    mutualFriends, // ✅ added
+    taskSuccessRate: taskStats.successRate,
+    tasksDone: taskStats.tasksDone,
+    dayStreak: taskStats.dayStreak,
+  };
 }

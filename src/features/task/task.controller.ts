@@ -33,6 +33,7 @@ export async function handleCreateTask(
   try {
     const parsed = taskSchema.parse(req.body); // Validated and type-safe
 
+    console.log("parsed", parsed);
     const taskInput: CreateTaskInput = {
       ...parsed,
       userId,
@@ -50,27 +51,7 @@ export async function handleCreateTask(
       });
     }
 
-    next(error);
-  }
-}
-
-export async function handleGetTasks(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  const userId = req.user?.id;
-
-  if (!userId) {
-    return next(new BadRequestError("User ID is required"));
-  }
-
-  try {
-    const tasks = await getAllTasks(userId);
-    res.status(200).json(tasks);
-  } catch (error) {
-    console.error("[TASK_FETCH_ERROR]", error);
-    next(error); // Let errorHandler.ts figure out the response
+    next(error); // Only call this if it’s not a Zod error
   }
 }
 
@@ -100,6 +81,31 @@ export async function handleUpdateTask(
       });
     }
 
+    next(error);
+  }
+}
+
+export async function handleGetTasks(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return next(new BadRequestError("User ID is required"));
+  }
+
+  try {
+    const limit = req.query.limit
+      ? parseInt(req.query.limit as string, 10)
+      : undefined;
+    const excludeSelf = req.query.excludeSelf === "true"; // default false if not set
+
+    const tasks = await getAllTasks(userId, { limit, excludeSelf });
+    res.status(200).json(tasks);
+  } catch (error) {
+    console.error("[TASK_FETCH_ERROR]", error);
     next(error);
   }
 }
