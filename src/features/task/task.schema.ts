@@ -17,7 +17,7 @@ export const reminderTaskSchema = baseTaskSchema.extend({
 export const decisionTaskSchema = baseTaskSchema.extend({
   type: z.literal("decision"),
   options: z.array(z.string()).min(2, "At least two options are required"),
-  // ❌ no helpers
+  helpers: helpersSchema,
 });
 
 export const motivationTaskSchema = baseTaskSchema.extend({

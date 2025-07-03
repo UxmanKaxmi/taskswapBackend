@@ -26,6 +26,7 @@ model Task {
   helpers     User[]    @relation("TaskHelpers")
 
   ReminderNote ReminderNote[]
+  Vote         Vote[]
 
   @@unique([text, userId])
 }
@@ -47,6 +48,7 @@ model User {
   sentNotifications Notification[] @relation("SenderNotifications")
   fcmToken          String? // ✅ Add this line
   helping           Task[]         @relation("TaskHelpers")
+  Vote              Vote[]
 }
 
 model ReminderNote {
@@ -85,6 +87,19 @@ model Notification {
   read      Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now())
+}
+
+model Vote {
+  id        String   @id @default(uuid())
+  userId    String
+  taskId    String
+  option    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  task Task @relation(fields: [taskId], references: [id])
+
+  @@unique([userId, taskId])
 }
 
 enum TaskType {

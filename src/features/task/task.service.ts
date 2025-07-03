@@ -32,10 +32,13 @@ async function checkDuplicateTask(
  */
 function hasHelpers(
   input: CreateTaskInput
-): input is ReminderTaskType | AdviceTaskType | MotivationTaskType {
-  return "helpers" in input;
+): input is
+  | ReminderTaskType
+  | AdviceTaskType
+  | MotivationTaskType
+  | DecisionTaskType {
+  return "helpers" in input && Array.isArray(input.helpers);
 }
-
 export async function createTask(input: CreateTaskInput) {
   const { text, userId, type } = input;
 
@@ -116,7 +119,7 @@ export async function createTask(input: CreateTaskInput) {
       reminder: `You’ve been asked to help with a reminder: “${text}”`,
       advice: `Someone needs your advice on: “${text}”`,
       motivation: `You’ve been invited to motivate someone on: “${text}”`,
-      decision: "", // shouldn't happen
+      decision: `You’ve been asked to help decide: “${text}”`, // ✅ added
     };
 
     await Promise.all(
@@ -167,7 +170,8 @@ export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
   const isHelperType =
     currentTask.type === "reminder" ||
     currentTask.type === "motivation" ||
-    currentTask.type === "advice";
+    currentTask.type === "advice" ||
+    currentTask.type === "decision";
 
   const dataToUpdate: any = {
     text: data.text,
@@ -200,7 +204,6 @@ export async function getAllTasks(
   userId: string,
   helpers?: GetAllTasksHelpers
 ) {
-  // Step 1: Get IDs of people the user follows
   const followings = await prisma.follow.findMany({
     where: { followerId: userId },
     select: { followingId: true },
@@ -211,7 +214,6 @@ export async function getAllTasks(
     userIds = [userId, ...userIds];
   }
 
-  // Step 2: Get tasks by self + followed users
   const tasks = await prisma.task.findMany({
     where: {
       userId: {
@@ -232,7 +234,8 @@ export async function getAllTasks(
     take: helpers?.limit,
   });
 
-  // Step 3: Get all reminder notes sent by current user
+  const taskIds = tasks.map((t) => t.id);
+
   const reminders = await prisma.reminderNote.findMany({
     where: { senderId: userId },
     select: { taskId: true },
@@ -240,12 +243,85 @@ export async function getAllTasks(
 
   const remindedTaskIds = new Set(reminders.map((r) => r.taskId));
 
-  // Step 4: Mark each task if user has reminded it
-  return tasks.map((task) => ({
-    ...task,
-    hasReminded: remindedTaskIds.has(task.id),
-    helpers: task.helpers, // ✅ Include helpers in the final payload
-  }));
+  const allVotes = await prisma.vote.findMany({
+    where: {
+      taskId: { in: taskIds },
+    },
+    select: {
+      taskId: true,
+      option: true,
+      user: {
+        select: {
+          id: true,
+          name: true,
+          photo: true,
+        },
+      },
+    },
+  });
+
+  const voteMap: Record<
+    string,
+    Record<
+      string,
+      { count: number; voters: { id: string; name: string; photo?: string }[] }
+    >
+  > = {};
+
+  for (const { taskId, option, user } of allVotes) {
+    if (!voteMap[taskId]) voteMap[taskId] = {};
+    if (!voteMap[taskId][option])
+      voteMap[taskId][option] = { count: 0, voters: [] };
+    voteMap[taskId][option].count += 1;
+    voteMap[taskId][option].voters.push({
+      ...user,
+      photo: user.photo ?? undefined,
+    });
+  }
+
+  const userVotes = await prisma.vote.findMany({
+    where: {
+      userId,
+      taskId: { in: taskIds },
+    },
+    select: {
+      taskId: true,
+      option: true,
+    },
+  });
+
+  const userVoteMap: Record<string, string> = {};
+  for (const { taskId, option } of userVotes) {
+    userVoteMap[taskId] = option;
+  }
+
+  return tasks.map((task) => {
+    const taskVotes = voteMap[task.id] || {};
+
+    const transformedVotes: Record<
+      string,
+      {
+        count: number;
+        preview: { id: string; name: string; photo?: string }[];
+      }
+    > = {};
+
+    for (const option in taskVotes) {
+      const voteData = taskVotes[option];
+      transformedVotes[option] = {
+        count: voteData.count,
+        preview: voteData.voters.slice(0, 4), // Only first 2 voters
+      };
+    }
+
+    return {
+      ...task,
+      hasReminded: remindedTaskIds.has(task.id),
+      votes: transformedVotes,
+      votedOption: userVoteMap[task.id] || null,
+      helpers: task.helpers,
+    };
+  });
 }
 
 export async function deleteTask(id: string) {
@@ -257,6 +333,11 @@ export async function deleteTask(id: string) {
     throw new AppError("Task not found.", HttpStatus.FORBIDDEN);
   }
 
+  await prisma.vote.deleteMany({
+    where: { taskId: id },
+  });
+
+  // ✅ Now safely delete the task
   return prisma.task.delete({
     where: { id },
   });

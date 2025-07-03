@@ -5,6 +5,7 @@ import taskRoutes from "./features/task/task.routes";
 import userRoutes from "./features/user/user.routes";
 import reminderNote from "./features/reminderNote/reminderNote.routes";
 import notificationRoutes from "./features/notification/notification.routes";
+import voteRoutes from "./features/vote/vote.routes";
 
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -23,6 +24,7 @@ app.use("/tasks", taskRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
 app.use("/notification", notificationRoutes as Router);
+app.use("/vote", voteRoutes as Router);
 
 app.use(errorHandler);
 
