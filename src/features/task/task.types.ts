@@ -33,6 +33,8 @@ export interface AdviceTaskType extends TaskBase {
 export interface DecisionTaskType extends TaskBase {
   type: "decision";
   options: string[];
+  helpers?: string[];
+  votes?: Record<string, number>; // ✅ optional
 }
 
 /**

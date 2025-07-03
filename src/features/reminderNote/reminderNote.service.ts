@@ -104,6 +104,14 @@ export async function getRemindersByTask(
   const notes = await prisma.reminderNote.findMany({
     where: { taskId },
     orderBy: { createdAt: "desc" },
+    include: {
+      sender: {
+        select: {
+          name: true,
+          photo: true,
+        },
+      },
+    },
   });
 
   return notes.map((note) => ({
@@ -112,5 +120,7 @@ export async function getRemindersByTask(
     senderId: note.senderId,
     message: note.message,
     createdAt: note.createdAt.toISOString(),
+    senderName: note.sender?.name ?? "Unknown",
+    senderPhoto: note.sender?.photo ?? null,
   }));
 }

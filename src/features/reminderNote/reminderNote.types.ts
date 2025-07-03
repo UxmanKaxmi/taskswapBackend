@@ -20,4 +20,6 @@ export interface ReminderNoteDTO {
   senderId: string;
   message: string;
   createdAt: string;
+  senderName: string;
+  senderPhoto?: string | null;
 }
