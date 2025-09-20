@@ -11,7 +11,9 @@ export interface VoteDTO {
 export interface CastVoteInput {
   userId: string;
   taskId: string;
-  option: string;
+  nextOption?: string; // new
+  prevOption?: string; // new (optional)
+  option?: string;
 }
 
 // Response shape for aggregated results

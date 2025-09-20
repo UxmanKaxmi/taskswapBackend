@@ -1,3 +1,4 @@
+import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { prisma } from "../../db/client";
 import { sendPushNotification } from "../../utils/sendPushNotification";
 
@@ -81,11 +82,98 @@ export async function createTaskHelperNotifications({
     data: helperIds.map((helperId) => ({
       userId: helperId,
       senderId,
-      type: "task-helper",
+      type: NOTIFICATION_TYPES.TASK_HELPER,
       message: `invited you to help with`,
       metadata: {
         taskId,
         taskText,
+      },
+    })),
+  });
+}
+
+export async function createDecisionTaskDoneNotifications({
+  helperIds,
+  senderId,
+  taskId,
+  taskText,
+}: {
+  helperIds: string[];
+  senderId: string;
+  taskId: string;
+  taskText: string;
+}) {
+  if (!helperIds.length) return;
+
+  await prisma.notification.createMany({
+    data: helperIds.map((helperId) => ({
+      userId: helperId,
+      senderId,
+      type: NOTIFICATION_TYPES.DECISION_DONE,
+      message: `marked the decision “${taskText}” as done.`,
+      metadata: {
+        taskId,
+        taskText,
+      },
+    })),
+  });
+}
+
+export async function sendTestDecisionDoneNotification(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      photo: true,
+    },
+  });
+
+  if (!user) throw new Error("User not found");
+
+  await prisma.notification.create({
+    data: {
+      userId,
+      senderId: userId,
+      type: NOTIFICATION_TYPES.DECISION_DONE,
+      message: `marked the decision “Test Decision” as done.`,
+      metadata: {
+        taskId: "demo-task-id",
+        taskText: "Test Decision",
+        senderName: user.name,
+        senderPhoto: user.photo,
+      },
+    },
+  });
+
+  console.log("✅ Test decisionDone notification sent to:", userId);
+}
+
+export async function createCommentMentionNotifications({
+  mentionedIds,
+  senderId,
+  taskId,
+  commentId,
+  commentText,
+}: {
+  mentionedIds: string[];
+  senderId: string;
+  taskId: string;
+  commentId: string;
+  commentText: string;
+}) {
+  if (!mentionedIds.length) return;
+
+  await prisma.notification.createMany({
+    data: mentionedIds.map((userId) => ({
+      userId,
+      senderId,
+      type: "comment", // camelCase type
+      message: "mentioned you in a comment",
+      metadata: {
+        taskId,
+        commentId,
+        commentText,
       },
     })),
   });

@@ -6,6 +6,7 @@ import {
   handleDeleteTask,
   handleMarkTaskAsDone,
   handleMarkTaskNotDone,
+  handleGetTaskById,
 } from "./task.controller";
 import { requireAuth } from "../../middleware/requireAuth";
 
@@ -13,6 +14,7 @@ const router = Router();
 
 router.post("/", requireAuth, handleCreateTask);
 router.get("/", requireAuth, handleGetTasks);
+router.get("/:id", requireAuth, handleGetTaskById);
 router.patch("/:id", requireAuth, handleUpdateTask);
 router.delete("/:id", requireAuth, handleDeleteTask);
 

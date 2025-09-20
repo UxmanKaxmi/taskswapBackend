@@ -11,7 +11,19 @@ import {
 } from "./task.types";
 import { HttpStatus } from "../../types/httpStatus";
 import { schedulePush } from "../../utils/scheduleReminderPush";
-import { createTaskHelperNotifications } from "../notification/notification.service";
+import {
+  createTaskHelperNotifications,
+  createDecisionTaskDoneNotifications,
+} from "../notification/notification.service";
+
+async function debugCheckTask(id: string) {
+  const task = await prisma.task.findUnique({
+    where: { id },
+  });
+  console.log("DEBUG Task:", task);
+}
+
+debugCheckTask("3a5d5b43-cd05-4e6c-8d55-fa377da0bf3f");
 
 async function checkDuplicateTask(
   text: string,
@@ -130,7 +142,6 @@ export async function createTask(input: CreateTaskInput) {
       })
     );
   }
-  // ✅ Add this now:
   if (hasHelpers(input) && input.helpers?.length) {
     await createTaskHelperNotifications({
       helperIds: input.helpers,
@@ -198,6 +209,56 @@ export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
       helpers: true,
     },
   });
+}
+
+export async function getTaskById(taskId: string, userId?: string) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      helpers: {
+        select: { id: true, name: true, photo: true },
+      },
+      Vote: {
+        include: {
+          user: {
+            // adjust to your actual User model relation name
+            select: { id: true, name: true, photo: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!task) throw new AppError("Task not found", HttpStatus.NOT_FOUND);
+
+  const votes = task.Vote.reduce((acc, v) => {
+    if (!acc[v.option]) {
+      acc[v.option] = { count: 0, preview: [] };
+    }
+    acc[v.option].count += 1;
+    if (acc[v.option].preview.length < 3) {
+      // limit preview to 3
+      acc[v.option].preview.push({
+        id: v.user.id,
+        name: v.user.name,
+        photo: v.user.photo ?? "", // fallback if null
+      });
+    }
+    return acc;
+  }, {} as Record<string, { count: number; preview: { id: string; name: string; photo: string }[] }>);
+
+  const votedOption = userId
+    ? task.Vote.find((v) => v.userId === userId)?.option
+    : null;
+
+  // Remove raw Vote array from response to match Object 1
+  const { Vote, ...taskData } = task;
+
+  return {
+    ...taskData,
+    votes,
+    votedOption,
+  };
 }
 
 export async function getAllTasks(
@@ -347,17 +408,15 @@ export async function markTaskAsDone(taskId: string, userId: string) {
   console.log("[LOOKUP] task ID:", taskId);
   const task = await prisma.task.findUnique({
     where: { id: taskId },
+    include: {
+      helpers: {
+        select: { id: true },
+      },
+    },
   });
 
   if (!task) {
     throw new AppError("Task not found", HttpStatus.NOT_FOUND);
-  }
-
-  if (task.type !== "reminder") {
-    throw new AppError(
-      "Only reminder tasks can be marked as done",
-      HttpStatus.BAD_REQUEST
-    );
   }
 
   if (task.userId !== userId) {
@@ -367,9 +426,41 @@ export async function markTaskAsDone(taskId: string, userId: string) {
     );
   }
 
+  // ✅ Send notification if it's a decision task
+  if (task.type === "decision" && task.helpers.length > 0) {
+    const helperIds = task.helpers.map((h) => h.id);
+
+    const helpers = await prisma.user.findMany({
+      where: { id: { in: helperIds } },
+      select: { fcmToken: true },
+    });
+
+    const title = "✅ Decision Finalized";
+    const body = `A decision task you helped with has been marked as done. See the result in the app.`;
+
+    await Promise.all(
+      helpers.map((helper) => {
+        if (helper.fcmToken) {
+          return schedulePush(0, helper.fcmToken, title, body);
+        }
+      })
+    );
+
+    // ✅ ADD THIS: update notification tab
+    await createDecisionTaskDoneNotifications({
+      helperIds,
+      senderId: userId,
+      taskId: task.id,
+      taskText: task.text,
+    });
+  }
+
   return prisma.task.update({
     where: { id: taskId },
-    data: { completed: true },
+    data: {
+      completed: true,
+      completedAt: new Date(),
+    },
   });
 }
 
@@ -382,12 +473,12 @@ export async function markTaskAsNotDone(taskId: string, userId: string) {
     throw new AppError("Task not found", HttpStatus.NOT_FOUND);
   }
 
-  if (task.type !== "reminder") {
-    throw new AppError(
-      "Only reminder tasks can be marked as done",
-      HttpStatus.BAD_REQUEST
-    );
-  }
+  // if (task.type !== "reminder") {
+  //   throw new AppError(
+  //     "Only reminder tasks can be marked as done",
+  //     HttpStatus.BAD_REQUEST
+  //   );
+  // }
 
   if (task.userId !== userId) {
     throw new AppError(
@@ -398,6 +489,9 @@ export async function markTaskAsNotDone(taskId: string, userId: string) {
 
   return prisma.task.update({
     where: { id: taskId },
-    data: { completed: false },
+    data: {
+      completed: false,
+      completedAt: null,
+    },
   });
 }

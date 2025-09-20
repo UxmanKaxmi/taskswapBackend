@@ -5,9 +5,17 @@ import { CastVoteInput } from "./vote.types";
 export async function castVoteForTask({
   userId,
   taskId,
+  nextOption,
+  prevOption, // (not needed for DB since we upsert per user, but kept for validation/logging)
   option,
 }: CastVoteInput) {
-  // Make sure the task exists and supports options
+  const chosen = (nextOption ?? option)?.trim();
+
+  if (!chosen) {
+    throw new Error("nextOption is required");
+  }
+
+  // Ensure task exists and is a decision with valid options
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: { options: true, type: true },
@@ -17,39 +25,47 @@ export async function castVoteForTask({
     throw new Error("Task not found or is not a decision type");
   }
 
-  if (!task.options?.includes(option)) {
+  if (!task.options?.includes(chosen)) {
     throw new Error("Invalid voting option");
   }
 
-  // Create or update the vote
+  // Upsert ensures: create on first vote, update when changing vote
   const vote = await prisma.vote.upsert({
-    where: {
-      userId_taskId: {
-        userId,
-        taskId,
-      },
-    },
-    update: { option },
-    create: { userId, taskId, option },
+    where: { userId_taskId: { userId, taskId } },
+    update: { option: chosen },
+    create: { userId, taskId, option: chosen },
+  });
+  console.log("🧠 Task options from DB:", task.options);
+  console.log("🎯 Option received from client:", chosen);
+
+  // Compute latest counts (groupBy is efficient)
+  const grouped = await prisma.vote.groupBy({
+    by: ["option"],
+    where: { taskId },
+    _count: { option: true },
   });
 
-  return vote;
+  const counts: Record<string, number> = {};
+  for (const row of grouped) counts[row.option] = row._count.option;
+
+  return {
+    vote, // { userId, taskId, option }
+    votedOption: chosen, // convenience
+    prevOption: prevOption ?? null,
+    counts, // { "Biryani": 12, "Korma": 9 }
+    taskId,
+  };
 }
 
 // 📊 Get vote breakdown for a task
 export async function getVotesForTask(taskId: string) {
-  const votes = await prisma.vote.findMany({
+  const grouped = await prisma.vote.groupBy({
+    by: ["option"],
     where: { taskId },
-    select: {
-      option: true,
-    },
+    _count: { option: true },
   });
 
   const result: Record<string, number> = {};
-
-  for (const { option } of votes) {
-    result[option] = (result[option] || 0) + 1;
-  }
-
+  for (const row of grouped) result[row.option] = row._count.option;
   return result;
 }
