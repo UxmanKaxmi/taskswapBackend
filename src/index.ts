@@ -59,6 +59,26 @@ async function startServer() {
 }
 
 if (process.env.NODE_ENV !== "test") {
+  // Debug: list all routes
+  app.get("/routes", (_req, res) => {
+    const routes: string[] = [];
+
+    app._router.stack.forEach((middleware: any) => {
+      if (middleware.route) {
+        // Route registered directly on the app
+        routes.push(middleware.route.path);
+      } else if (middleware.name === "router") {
+        // Router middleware
+        middleware.handle.stack.forEach((handler: any) => {
+          const fullPath =
+            (middleware.regexp?.toString() || "") + handler.route.path;
+          routes.push(fullPath);
+        });
+      }
+    });
+
+    res.json({ routes });
+  });
   startServer();
 }
 
