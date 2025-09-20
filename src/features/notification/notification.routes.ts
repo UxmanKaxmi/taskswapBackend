@@ -14,4 +14,6 @@ router.patch("/:id/read", requireAuth, handleMarkNotificationAsRead);
 router.post("/test", requireAuth, handleTestSendNotification); // POST /api/notification/test
 router.post("/mark-many-read", requireAuth, handleBatchMarkNotificationsAsRead);
 
+
+
 export default router;

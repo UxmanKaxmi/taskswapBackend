@@ -27,6 +27,7 @@ model Task {
 
   ReminderNote ReminderNote[]
   Vote         Vote[]
+  Comment      Comment[]
 
   @@unique([text, userId])
 }
@@ -49,6 +50,8 @@ model User {
   fcmToken          String? // ✅ Add this line
   helping           Task[]         @relation("TaskHelpers")
   Vote              Vote[]
+  Comment           Comment[]
+  CommentLike       CommentLike[]
 }
 
 model ReminderNote {
@@ -107,4 +110,29 @@ enum TaskType {
   advice
   decision
   motivation
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  text      String
+  taskId    String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task  Task          @relation(fields: [taskId], references: [id])
+  user  User          @relation(fields: [userId], references: [id])
+  likes CommentLike[]
+}
+
+model CommentLike {
+  id        String   @id @default(uuid())
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([commentId, userId])
 }

@@ -3,6 +3,7 @@ import {
   createTask,
   deleteTask,
   getAllTasks,
+  getTaskById,
   markTaskAsDone,
   markTaskAsNotDone,
   updateTask,
@@ -106,6 +107,33 @@ export async function handleGetTasks(
     res.status(200).json(tasks);
   } catch (error) {
     console.error("[TASK_FETCH_ERROR]", error);
+    next(error);
+  }
+}
+
+export async function handleGetTaskById(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return next(new BadRequestError("User ID is required"));
+    }
+
+    const task = await getTaskById(id, userId);
+
+    if (!task) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+
+    res.status(200).json(task);
+  } catch (error) {
+    console.error("[TASK_FETCH_BY_ID_ERROR]", error);
     next(error);
   }
 }

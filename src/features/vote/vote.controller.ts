@@ -10,20 +10,36 @@ export async function castVote(
   try {
     const userId = req.user?.id;
     const taskId = req.params.id;
-    const { option } = req.body;
 
-    if (!taskId || !option) {
-      res.status(400).json({ message: "Missing required fields" });
+    // Accept both legacy { option } and new { nextOption, prevOption }
+    const { nextOption, prevOption, option } = (req.body ?? {}) as {
+      nextOption?: string;
+      prevOption?: string;
+      option?: string; // legacy
+    };
+
+    const chosen = (nextOption ?? option)?.trim();
+
+    if (!taskId) {
+      return res.status(400).json({ message: "Missing taskId" });
     }
-
     if (!userId) {
-      res.status(400).json({ message: "Missing userId" });
-      return;
+      return res.status(400).json({ message: "Missing userId" });
     }
-    const vote = await castVoteForTask({ userId, taskId, option });
-    res.status(200).json(vote);
+    if (!chosen) {
+      return res.status(400).json({ message: "nextOption is required" });
+    }
+
+    const result = await castVoteForTask({
+      userId,
+      taskId,
+      nextOption: chosen,
+      prevOption, // optional
+    });
+
+    return res.status(200).json(result);
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }
 
@@ -36,17 +52,17 @@ export async function getVotes(
   try {
     const taskId = req.params.id;
     if (!taskId) {
-      res.status(400).json({ message: "Missing taskId" });
+      return res.status(400).json({ message: "Missing taskId" });
     }
 
     const results = await getVotesForTask(taskId);
-    res.status(200).json(results);
+    return res.status(200).json(results);
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }
 
 // (Optional) Test or dev route
 export async function handleGetVote(_req: Request, res: Response) {
-  res.status(200).json({ message: "✅ Vote route is working" });
+  return res.status(200).json({ message: "✅ Vote route is working" });
 }
