@@ -11,20 +11,30 @@ import {
   searchFriends,
 } from "./user.controller";
 import { requireAuth } from "../../middleware/requireAuth";
+import { optionalAuth } from "../../middleware/optionalAuth";
 
 const router = Router();
 
+// Sync/login user
 router.post("/", verifyGoogleToken, handleSyncUser);
+
+// Match contacts (auth required)
 router.post("/match", requireAuth, handleMatchUsers);
 
-// router.post("/follow", requireAuth, handleFollowUser);
-// router.post("/unfollow", requireAuth, handleUnfollowUser);
+// Follow/unfollow
 router.get("/toggleFollow/:userId", requireAuth, handleToggleFollowUser);
-router.get("/followers", requireAuth, handleGetFollowers);
-router.get("/following", requireAuth, handleGetFollowing);
+
+// ⭐ PUBLIC GET ENDPOINTS — FIXED
+router.get("/followers", optionalAuth, handleGetFollowers);
+router.get("/following", optionalAuth, handleGetFollowing);
+
+// Profile of currently logged-in user
 router.get("/me", requireAuth, handleGetMe);
 
+// Search friends (still requires auth)
 router.get("/search-friends", requireAuth, searchFriends);
-router.get("/:id/profile", requireAuth, handleGetUserProfile);
+
+// ⭐ PUBLIC PROFILE VIEW — FIXED
+router.get("/:id/profile", optionalAuth, handleGetUserProfile);
 
 export default router;

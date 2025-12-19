@@ -51,18 +51,12 @@ export async function createComment(input: CreateCommentInput) {
   });
 }
 
-export async function getCommentsForTask(taskId: string, userId: string) {
+export async function getCommentsForTask(taskId: string, viewerId: string | null) {
   const comments = await prisma.comment.findMany({
     where: { taskId },
     orderBy: { createdAt: "desc" },
     include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          photo: true,
-        },
-      },
+      user: { select: { id: true, name: true, photo: true } },
       likes: true,
     },
   });
@@ -76,7 +70,7 @@ export async function getCommentsForTask(taskId: string, userId: string) {
     updatedAt: c.updatedAt?.toISOString(),
     user: c.user,
     likesCount: c.likes.length,
-    likedByMe: c.likes.some((like) => like.userId === userId),
+    likedByMe: viewerId ? c.likes.some((like) => like.userId === viewerId) : false, // ⭐ public safe
   }));
 }
 

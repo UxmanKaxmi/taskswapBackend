@@ -8,10 +8,12 @@ datasource db {
 }
 
 model Task {
+  
   id        String   @id @default(uuid())
   text      String
   type      TaskType
   createdAt DateTime @default(now())
+  viewCount     Int      @default(0)
   userId    String
   user      User     @relation(fields: [userId], references: [id])
 
@@ -22,18 +24,39 @@ model Task {
   avatar      String    @default("")
   name        String    @default("")
   completed   Boolean   @default(false)
-  completedAt DateTime? // ✅ Add this line
-  helpers     User[]    @relation("TaskHelpers")
+  completedAt DateTime? // ✅
+
+  helpers User[] @relation("TaskHelpers")
 
   ReminderNote ReminderNote[]
   Vote         Vote[]
   Comment      Comment[]
+  Push         Push[]
+
 
   @@unique([text, userId])
+  @@index([userId, createdAt])
+
+
+  isPublic   Boolean  @default(true)
+}
+
+enum ReferralStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+  REJECTED
+}
+
+enum ReferralChannel {
+  GENERIC
+  SMS
+  WHATSAPP
+  EMAIL
 }
 
 model User {
-  id        String   @id
+  id        String   @id @default(cuid())
   email     String   @unique
   name      String
   photo     String?
@@ -47,11 +70,18 @@ model User {
 
   notifications     Notification[] @relation("UserNotifications")
   sentNotifications Notification[] @relation("SenderNotifications")
-  fcmToken          String? // ✅ Add this line
+  fcmToken          String? // ✅
   helping           Task[]         @relation("TaskHelpers")
   Vote              Vote[]
   Comment           Comment[]
   CommentLike       CommentLike[]
+
+  referralCode  ReferralCode?
+  referralsSent Referral[]     @relation("ReferralsSent")
+  referralsRecv Referral[]     @relation("ReferralsRecv")
+  referralLinks ReferralLink[]
+
+  Push Push[]
 }
 
 model ReminderNote {
@@ -61,35 +91,43 @@ model ReminderNote {
   message   String
   createdAt DateTime @default(now())
 
-  task   Task @relation(fields: [taskId], references: [id])
-  sender User @relation(fields: [senderId], references: [id])
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model Follow {
   id          String   @id @default(uuid())
-  follower    User     @relation("FollowedBy", fields: [followerId], references: [id])
+  follower    User     @relation("FollowedBy", fields: [followerId], references: [id], onDelete: Cascade)
   followerId  String
-  following   User     @relation("Following", fields: [followingId], references: [id])
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
   followingId String
   createdAt   DateTime @default(now())
 
   @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
 }
 
 model Notification {
   id String @id @default(uuid())
 
   userId String
-  user   User   @relation("UserNotifications", fields: [userId], references: [id])
+  user   User   @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   senderId String?
-  sender   User?   @relation("SenderNotifications", fields: [senderId], references: [id])
+  sender   User?   @relation("SenderNotifications", fields: [senderId], references: [id], onDelete: SetNull)
 
   type      String
   message   String
   read      Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model Vote {
@@ -99,10 +137,11 @@ model Vote {
   option    String
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
-  task Task @relation(fields: [taskId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([userId, taskId])
+  @@index([taskId])
 }
 
 enum TaskType {
@@ -120,9 +159,12 @@ model Comment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  task  Task          @relation(fields: [taskId], references: [id])
-  user  User          @relation(fields: [userId], references: [id])
+  task  Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   likes CommentLike[]
+
+  @@index([taskId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model CommentLike {
@@ -131,8 +173,64 @@ model CommentLike {
   userId    String
   createdAt DateTime @default(now())
 
-  comment Comment @relation(fields: [commentId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([commentId, userId])
+  @@index([userId])
+}
+
+model ReferralCode {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  code      String   @unique // e.g., USMAN123
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Referral {
+  id          String           @id @default(cuid())
+  inviterId   String
+  inviteeId   String?
+  codeUsed    String
+  channel     ReferralChannel?
+  src         String?
+  campaign    String?
+  installId   String?
+  status      ReferralStatus   @default(PENDING)
+  createdAt   DateTime         @default(now())
+  qualifiedAt DateTime?
+
+  invitedBy   User  @relation("ReferralsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitedUser User? @relation("ReferralsRecv", fields: [inviteeId], references: [id], onDelete: SetNull)
+
+  @@index([inviterId, createdAt])
+  @@index([installId])
+}
+
+model ReferralLink {
+  id        String          @id @default(cuid())
+  userId    String
+  channel   ReferralChannel @default(GENERIC) // ✅ non-null
+  token     String          @unique // rotates; appended as ?k=...
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel]) // ✅ now enforced correctly
+  @@index([userId, active])
+}
+
+model Push {
+  id        String   @id @default(uuid())
+  userId    String
+  taskId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId]) // one push per user per task
+  @@index([taskId])
 }

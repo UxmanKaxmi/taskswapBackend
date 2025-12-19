@@ -31,13 +31,11 @@ export async function handleGetComments(
   res: Response,
   next: NextFunction
 ) {
-  const userId = req.user?.id;
-  const { taskId } = req.params;
-  if (!userId) {
-    return next(new BadRequestError("User ID is required"));
-  }
   try {
-    const comments = await getCommentsForTask(taskId, userId);
+    const viewerId = req.user?.id ?? null;  // ⭐ PUBLIC-SAFE
+    const { taskId } = req.params;
+
+    const comments = await getCommentsForTask(taskId, viewerId);
     res.status(200).json(comments);
   } catch (error) {
     next(error);

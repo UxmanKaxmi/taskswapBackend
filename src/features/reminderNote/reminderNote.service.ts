@@ -1,5 +1,3 @@
-// src/features/reminderNote/reminderNote.service.ts
-
 import { sendPushNotification } from "../../utils/sendPushNotification";
 import { prisma } from "../../db/client";
 import { BadRequestError } from "../../errors";
@@ -19,20 +17,15 @@ export async function sendReminderNote({
     select: {
       userId: true,
       text: true,
-      user: {
-        select: { fcmToken: true },
-      },
+      user: { select: { fcmToken: true } },
     },
   });
 
-  if (!task) {
-    throw new BadRequestError("Task not found.");
-  }
-
-  if (task.userId === senderId) {
+  if (!task) throw new BadRequestError("Task not found.");
+  if (task.userId === senderId)
     throw new BadRequestError("You cannot remind yourself.");
-  }
 
+  // Notify task owner via push
   if (task.user?.fcmToken) {
     await sendPushNotification(
       task.user.fcmToken,
@@ -41,19 +34,9 @@ export async function sendReminderNote({
     );
   }
 
-  if (!task) {
-    throw new BadRequestError("Task not found.");
-  }
-
-  if (task.userId === senderId) {
-    throw new BadRequestError("You cannot remind yourself.");
-  }
-
+  // Prevent duplicate reminders from same user
   const existing = await prisma.reminderNote.findFirst({
-    where: {
-      taskId,
-      senderId,
-    },
+    where: { taskId, senderId },
   });
 
   if (existing) {
@@ -61,11 +44,7 @@ export async function sendReminderNote({
   }
 
   const reminder = await prisma.reminderNote.create({
-    data: {
-      taskId,
-      senderId,
-      message,
-    },
+    data: { taskId, senderId, message },
   });
 
   const sender = await prisma.user.findUnique({
@@ -73,11 +52,7 @@ export async function sendReminderNote({
     select: { name: true, photo: true },
   });
 
-  if (!sender) {
-    throw new BadRequestError("Sender not found.");
-  }
-
-  // ✅ Send notification to task owner
+  // Create notification entry
   await prisma.notification.create({
     data: {
       userId: task.userId,
@@ -88,8 +63,8 @@ export async function sendReminderNote({
         taskId,
         senderId,
         taskText: task.text,
-        senderName: sender.name,
-        senderPhoto: sender.photo,
+        senderName: sender?.name,
+        senderPhoto: sender?.photo,
       },
     },
   });
@@ -99,18 +74,13 @@ export async function sendReminderNote({
 
 export async function getRemindersByTask(
   taskId: string,
-  userId: string | undefined
+  _userId: string | null // <-- ⭐ userId is optional but kept for future personalization
 ): Promise<ReminderNoteDTO[]> {
   const notes = await prisma.reminderNote.findMany({
     where: { taskId },
     orderBy: { createdAt: "desc" },
     include: {
-      sender: {
-        select: {
-          name: true,
-          photo: true,
-        },
-      },
+      sender: { select: { name: true, photo: true } },
     },
   });
 

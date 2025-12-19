@@ -12,6 +12,7 @@ const requireAuth = (req, res, next) => {
         return;
     }
     const token = authHeader.split(" ")[1];
+    console.log("🔐 Incoming JWT token:", token); //
     try {
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
         // ✅ Set as req.user for consistent usage

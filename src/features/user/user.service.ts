@@ -338,13 +338,11 @@ export async function searchFriendsService(
 
 export async function getUserProfileById(
   targetUserId: string,
-  currentUserId: string
+  currentUserId: string | null
 ) {
   const user = await getUserById(targetUserId);
 
-  if (!user) {
-    throw new AppError("User not found", HttpStatus.NOT_FOUND);
-  }
+  if (!user) throw new AppError("User not found", HttpStatus.NOT_FOUND);
 
   const [
     followersCount,
@@ -369,36 +367,38 @@ export async function getUserProfileById(
         remindAt: true,
         options: true,
         deliverAt: true,
-        helpers: {
-          select: {
-            id: true,
-            name: true,
-            photo: true,
-          },
-        },
+        helpers: { select: { id: true, name: true, photo: true } },
       },
     }),
-    getMutualFriends(currentUserId, targetUserId), // ✅ added
+    currentUserId ? getMutualFriends(currentUserId, targetUserId) : [],
   ]);
 
-  const [isFollowing, isFollowedBy] = await Promise.all([
-    prisma.follow.findUnique({
-      where: {
-        followerId_followingId: {
-          followerId: currentUserId,
-          followingId: targetUserId,
+  let isFollowing = false;
+  let isFollowedBy = false;
+
+  if (currentUserId) {
+    const [followData1, followData2] = await Promise.all([
+      prisma.follow.findUnique({
+        where: {
+          followerId_followingId: {
+            followerId: currentUserId,
+            followingId: targetUserId,
+          },
         },
-      },
-    }),
-    prisma.follow.findUnique({
-      where: {
-        followerId_followingId: {
-          followerId: targetUserId,
-          followingId: currentUserId,
+      }),
+      prisma.follow.findUnique({
+        where: {
+          followerId_followingId: {
+            followerId: targetUserId,
+            followingId: currentUserId,
+          },
         },
-      },
-    }),
-  ]);
+      }),
+    ]);
+
+    isFollowing = !!followData1;
+    isFollowedBy = !!followData2;
+  }
 
   return {
     id: user.id,
@@ -408,10 +408,10 @@ export async function getUserProfileById(
     bio: null,
     followersCount,
     followingCount,
-    isFollowing: !!isFollowing,
-    isFollowedBy: !!isFollowedBy,
+    isFollowing,
+    isFollowedBy,
     recentTasks,
-    mutualFriends, // ✅ added
+    mutualFriends,
     taskSuccessRate: taskStats.successRate,
     tasksDone: taskStats.tasksDone,
     dayStreak: taskStats.dayStreak,

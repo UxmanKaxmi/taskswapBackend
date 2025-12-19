@@ -5,6 +5,7 @@
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "^6.7.0",
+    "axios": "^1.13.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
@@ -21,14 +22,15 @@
     "start": "node dist/src/index.js",
     "test": "cross-env DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test?schema=public\" prisma migrate reset --force --skip-generate && jest",
     "test-reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
-    "db:migrate": "npx prisma migrate dev --name init && npx prisma generate",
+    "db-migrate": "npx prisma migrate dev --name init && npx prisma generate",
     "seed": "ts-node --esm prisma/seed.ts",
-    "create:feature": "ts-node scripts/createFeature.ts",
+    "create-feature": "ts-node scripts/createFeature.ts",
     "db-reset": "npx prisma migrate reset --force",
     "postinstall": "prisma generate",
     "postdeploy": "prisma migrate deploy"
   },
   "devDependencies": {
+    "@types/axios": "^0.14.4",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/jest": "^29.5.14",

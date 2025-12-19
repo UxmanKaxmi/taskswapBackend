@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Task" ADD COLUMN     "viewCount" INTEGER NOT NULL DEFAULT 0;

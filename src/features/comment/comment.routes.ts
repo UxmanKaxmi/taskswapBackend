@@ -5,16 +5,17 @@ import {
   handleToggleLike,
 } from "./comment.controller";
 import { requireAuth } from "../../middleware/requireAuth";
+import { optionalAuth } from "../../middleware/optionalAuth";
 
 const router = express.Router();
 
-// Create a new comment
+// Create a new comment → login required
 router.post("/", requireAuth, handleCreateComment);
 
-// Get comments for a specific task
-router.get("/:taskId", requireAuth, handleGetComments);
+// Get comments for a specific task → PUBLIC
+router.get("/:taskId", optionalAuth, handleGetComments);
 
-// Toggle like (heart) for a comment
+// Toggle like for a comment → login required
 router.post("/like", requireAuth, handleToggleLike);
 
 export default router;

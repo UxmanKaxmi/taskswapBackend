@@ -7,6 +7,9 @@ import reminderNote from "./features/reminderNote/reminderNote.routes";
 import notificationRoutes from "./features/notification/notification.routes";
 import voteRoutes from "./features/vote/vote.routes";
 import commentRoutes from "./features/comment/comment.routes";
+import referralRoutes from "./features/referral/referral.routes";
+import feedRoutes from "./features/feed/feed.routes";
+import pushRoutes from "./features/push/push.routes";
 
 import { PrismaClient } from "@prisma/client";
 import { errorHandler } from "./middleware/errorHandler";
@@ -31,12 +34,17 @@ app.get("/test-db", async (req, res) => {
   }
 });
 
+app.use("/feed", feedRoutes as Router);
 app.use("/tasks", taskRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
 app.use("/notification", notificationRoutes as Router);
 app.use("/vote", voteRoutes as Router);
 app.use("/comments", commentRoutes as Router);
+app.use("/referrals", referralRoutes as Router);
+
+// Push routes, we need Task here
+app.use("/tasks", pushRoutes as Router);
 
 app.use(errorHandler);
 
@@ -49,7 +57,7 @@ async function startServer() {
       process.env.DATABASE_URL
     );
 
-    app.listen(PORT, () => {
+    app.listen(PORT,"0.0.0.0", () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
     });
   } catch (error) {

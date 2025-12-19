@@ -152,16 +152,14 @@ export async function handleGetFollowers(
   res: Response,
   next: NextFunction
 ) {
-  try {
-    if (!req.user?.id) {
-      return next(new AppError("Unauthorized: Missing user ID", 401));
-    }
+  const targetUserId = (req.query.userId as string) || req.user?.id || null;
 
-    const followers = await getFollowers(req.user?.id);
-    res.status(200).json(followers);
-  } catch (error) {
-    next(new AppError("Failed to fetch followers", 500));
+  if (!targetUserId) {
+    return res.status(200).json([]);
   }
+
+  const followers = await getFollowers(targetUserId);
+  res.status(200).json(followers);
 }
 
 export async function handleGetFollowing(
@@ -170,15 +168,16 @@ export async function handleGetFollowing(
   next: NextFunction
 ) {
   try {
-    if (!req.user?.id) {
-      return next(new AppError("Unauthorized: Missing user ID", 401));
+    const targetUserId = req.params.userId || req.user?.id || null;
+
+    if (!targetUserId) {
+      return res.status(200).json([]);
     }
 
-    const following = await getFollowing(req.user?.id);
-    console.log("💥 Backend userId:", req.user?.id);
+    const following = await getFollowing(targetUserId);
     res.status(200).json(following);
   } catch (error) {
-    next(new AppError("Failed to fetch following", 500));
+    next(error);
   }
 }
 
@@ -206,7 +205,6 @@ export async function handleGetMe(
       followingCount,
       taskSuccessRate: taskStats.successRate,
       tasksDone: taskStats.tasksDone,
-      dayStreak: taskStats.dayStreak,
     });
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
@@ -248,9 +246,9 @@ export async function handleGetUserProfile(
   next: NextFunction
 ) {
   const targetUserId = req.params.id;
-  const currentUserId = req.user?.id;
+const currentUserId = req.user?.id ?? null;
 
-  if (!targetUserId || !currentUserId) {
+  if (!targetUserId) {
     return next(new AppError("Invalid user ID", 400));
   }
 
@@ -258,7 +256,6 @@ export async function handleGetUserProfile(
     const profile = await getUserProfileById(targetUserId, currentUserId);
     res.status(200).json(profile);
   } catch (error) {
-    console.error("[GET_USER_PROFILE_ERROR]", error);
     next(
       error instanceof AppError ? error : new AppError("Unexpected error", 500)
     );

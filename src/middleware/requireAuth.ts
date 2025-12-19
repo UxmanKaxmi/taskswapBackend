@@ -22,6 +22,7 @@ export const requireAuth = (
 
     // ✅ Set as req.user for consistent usage
     req.user = { id: decoded.userId };
+    console.log("✅ JWT token:", token);
     console.log("✅ Decoded token:", decoded);
     console.log("✅ req.user:", req.user);
 
