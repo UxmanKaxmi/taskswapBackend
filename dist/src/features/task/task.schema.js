@@ -14,8 +14,21 @@ exports.reminderTaskSchema = exports.baseTaskSchema.extend({
     helpers: helpersSchema, // ✅
 });
 exports.decisionTaskSchema = exports.baseTaskSchema.extend({
-    type: zod_1.z.literal("decision"),
-    options: zod_1.z.array(zod_1.z.string()).min(2, "At least two options are required"),
+    type: z.literal("decision"),
+    options: z
+        .array(z.string())
+        .min(2, "At least two options are required")
+        .superRefine((options, ctx) => {
+            const normalized = options.map(o => o.trim().toLowerCase());
+            const unique = new Set(normalized);
+
+            if (unique.size !== normalized.length) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: "Decision options must be unique",
+                });
+            }
+        }),
     helpers: helpersSchema,
 });
 exports.motivationTaskSchema = exports.baseTaskSchema.extend({
@@ -49,9 +62,24 @@ const reminderUpdateSchema = baseUpdateSchema.extend({
     helpers: helpersSchema, // ✅
 });
 const decisionUpdateSchema = baseUpdateSchema.extend({
-    type: zod_1.z.literal("decision").optional(),
-    options: zod_1.z.array(zod_1.z.string()).min(2).optional(),
-    // ❌ no helpers
+    type: z.literal("decision").optional(),
+    options: z
+        .array(z.string())
+        .min(2)
+        .optional()
+        .superRefine((options, ctx) => {
+            if (!options) return;
+
+            const normalized = options.map(o => o.trim().toLowerCase());
+            const unique = new Set(normalized);
+
+            if (unique.size !== normalized.length) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: "Decision options must be unique",
+                });
+            }
+        }),
 });
 const motivationUpdateSchema = baseUpdateSchema.extend({
     type: zod_1.z.literal("motivation").optional(),

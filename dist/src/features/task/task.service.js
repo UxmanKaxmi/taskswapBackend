@@ -28,14 +28,41 @@ async function checkDuplicateTask(text, userId, excludeId) {
         },
     });
 }
+
+function validateDecisionOptions(options) {
+    if (!options || options.length < 2) {
+        throw new AppError(
+            "Decision tasks must have at least two options.",
+            HttpStatus.BAD_REQUEST
+        );
+    }
+
+    const normalized = options.map(o => o.trim().toLowerCase());
+    const unique = new Set(normalized);
+
+    if (unique.size !== normalized.length) {
+        throw new AppError(
+            "Decision options must be unique.",
+            httpStatus_1.HttpStatus.BAD_REQUEST
+        );
+    }
+}
 /**
  * Type guard to check if task input supports helpers
  */
 function hasHelpers(input) {
     return "helpers" in input && Array.isArray(input.helpers);
 }
+
+
 async function createTask(input) {
     const { text, userId, type } = input;
+
+    if (type === "decision") {
+        validateDecisionOptions(input.options);
+    }
+
+
     const existing = await checkDuplicateTask(text, userId);
     if (existing) {
         throw new AppError_1.AppError("You already created this task.", httpStatus_1.HttpStatus.CONFLICT);
@@ -50,7 +77,10 @@ async function createTask(input) {
     const avatar = input.avatar ?? user.photo ?? undefined;
     const name = user.name;
     const remindAt = type === "reminder" ? input.remindAt : undefined;
-    const options = type === "decision" ? input.options ?? [] : [];
+    const options =
+        type === "decision"
+            ? input.options?.map(o => o.trim()) ?? []
+            : [];
     const deliverAt = type === "motivation"
         ? input.deliverAt ?? undefined
         : undefined;
@@ -117,6 +147,14 @@ async function updateTask(id, data) {
     if (!currentTask) {
         throw new AppError_1.AppError("Task not found.", httpStatus_1.HttpStatus.NOT_FOUND);
     }
+
+    if (
+        (data.type === "decision" || currentTask.type === "decision") &&
+        "options" in data
+    ) {
+        validateDecisionOptions(data.options);
+    }
+
     if (data.text) {
         const duplicate = await checkDuplicateTask(data.text, currentTask.userId, id);
         if (duplicate) {
@@ -132,7 +170,10 @@ async function updateTask(id, data) {
         type: data.type,
         name: data.name,
         remindAt: data.type === "reminder" ? data.remindAt ?? undefined : undefined,
-        options: data.type === "decision" ? data.options ?? [] : [],
+        options:
+            data.type === "decision"
+                ? data.options?.map(o => o.trim()) ?? []
+                : [],
         deliverAt: data.type === "motivation" ? data.deliverAt ?? undefined : undefined,
         avatar: data.avatar ?? undefined,
         ...(isHelperType && "helpers" in data

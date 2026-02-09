@@ -1,3 +1,4 @@
+import { createMotivationMilestoneNotification, createMotivationPushNotification } from "../notification/notification.service";
 import { prisma } from "../../db/client";
 
 type TogglePushInput = {
@@ -12,7 +13,7 @@ export async function togglePushForTask({
 }: TogglePushInput) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { type: true },
+    select: { id: true, userId: true, type: true },
   });
 
   if (!task || task.type !== "motivation") {
@@ -26,25 +27,42 @@ export async function togglePushForTask({
   });
 
   let hasPushed: boolean;
+  let pushCount: number;
 
   if (existing) {
+    // 👎 Removing a push → NO notifications
     await prisma.push.delete({
       where: { id: existing.id },
     });
+
+    pushCount = await prisma.push.count({ where: { taskId } });
     hasPushed = false;
   } else {
+    // 👍 Adding a push
     await prisma.push.create({
       data: { userId, taskId },
     });
+
+    pushCount = await prisma.push.count({ where: { taskId } });
     hasPushed = true;
+
+    // 🔔 Normal motivation push notification
+    await createMotivationPushNotification({
+      taskId,
+      taskOwnerId: task.userId,
+      pushedByUserId: userId,
+    });
+
+    // 🔥 Milestone check
+    await createMotivationMilestoneNotification({
+      taskId,
+      taskOwnerId: task.userId,
+    pushCount: 10, // 👈 force milestone
+    });
   }
 
-  const pushCount = await prisma.push.count({
-    where: { taskId },
-  });
-
   return {
-    hasPushed,   // ✅ correct key
+    hasPushed,
     pushCount,
   };
 }

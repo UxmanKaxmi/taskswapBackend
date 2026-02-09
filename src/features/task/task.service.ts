@@ -20,6 +20,27 @@ import {
    INTERNAL UTILS
 --------------------------------------------------------- */
 
+function validateDecisionOptions(options?: string[]) {
+  if (!options || options.length < 2) {
+    throw new AppError(
+      "Decision tasks must have at least two options.",
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  const normalized = options.map((o) => o.trim().toLowerCase());
+  const unique = new Set(normalized);
+
+  if (unique.size !== normalized.length) {
+    throw new AppError(
+      "Decision options must be unique.",
+      HttpStatus.BAD_REQUEST
+    );
+  }
+}
+
+
+
 async function checkDuplicateTask(text: string, userId: string, excludeId?: string) {
   return prisma.task.findFirst({
     where: {
@@ -29,6 +50,7 @@ async function checkDuplicateTask(text: string, userId: string, excludeId?: stri
     },
   });
 }
+
 
 function hasHelpers(
   input: CreateTaskInput
@@ -61,7 +83,16 @@ export async function createTask(input: CreateTaskInput) {
   const name = user.name;
 
   const remindAt = type === "reminder" ? (input as ReminderTaskType).remindAt : undefined;
-  const options = type === "decision" ? input.options ?? [] : [];
+  
+  if (type === "decision") {
+  validateDecisionOptions(input.options);
+}
+
+const options =
+  type === "decision"
+    ? input.options?.map((o) => o.trim()) ?? []
+    : [];
+    
   const deliverAt = type === "motivation" ? (input as MotivationTaskType).deliverAt ?? undefined : undefined;
 
   const helpers =
@@ -152,12 +183,23 @@ export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
 
   const isHelperType = ["reminder", "motivation", "advice", "decision"].includes(currentTask.type);
 
+
+  if (
+  (data.type === "decision" || currentTask.type === "decision") &&
+  "options" in data
+) {
+  validateDecisionOptions(data.options);
+}
+
   const dataToUpdate: any = {
     text: data.text,
     name: data.name,
     type: data.type,
     remindAt: data.type === "reminder" ? data.remindAt : undefined,
-    options: data.type === "decision" ? data.options ?? [] : [],
+    options:
+  data.type === "decision"
+    ? data.options?.map((o) => o.trim()) ?? []
+    : [],
     deliverAt: data.type === "motivation" ? data.deliverAt : undefined,
     avatar: data.avatar,
     ...(isHelperType && "helpers" in data
@@ -188,7 +230,7 @@ export async function getTaskById(taskId: string, userId?: string | null) {
   // ---------------------------------
   // Fetch task with relations
   // ---------------------------------
-  const task = await prisma.task.findUnique({
+const task = await prisma.task.findUnique({
   where: { id: taskId },
   include: {
     helpers: { select: { id: true, name: true, photo: true } },
@@ -199,7 +241,15 @@ export async function getTaskById(taskId: string, userId?: string | null) {
     },
     _count: { select: { Push: true } },
     Push: userId
-      ? { where: { userId }, select: { id: true } }
+      ? {
+          orderBy: { createdAt: "desc" },
+          select: {
+            createdAt: true,
+            user: {
+              select: { id: true, name: true, photo: true },
+            },
+          },
+        }
       : false,
   },
 });
@@ -226,21 +276,52 @@ export async function getTaskById(taskId: string, userId?: string | null) {
     ? task.Vote.find((v) => v.userId === userId)?.option ?? null
     : null;
 
+    const hasVoted = userId ? votedOption !== null : false;
   const { Vote, ...taskData } = task;
 
   // ---------------------------------
   // Include viewCount in response
   // ---------------------------------
+
+
+let hasAdvised = false;
+
+if (userId && task.type === "advice") {
+  const advice = await prisma.comment.findFirst({
+    where: {
+      taskId,
+      userId,
+    },
+    select: { id: true },
+  });
+
+  hasAdvised = !!advice;
+}
+
+const pushHistory =
+  task.type === "motivation"
+    ? task.Push.map((p) => ({
+        user: p.user,
+        pushedAt: p.createdAt,
+      }))
+    : [];
+
   return {
     ...taskData,
     votes,
     votedOption,
     viewCount: task.viewCount, // 👈 ADD THIS
+    hasVoted, // 👈 ADD THIS
+
      pushCount: task.type === "motivation" ? task._count.Push : 0,
   hasPushed:
     userId && task.type === "motivation"
       ? task.Push?.length > 0
       : false,
+        pushHistory, // 👈 ADD THIS
+
+        hasAdvised,
+
   };
 }
 
@@ -296,6 +377,24 @@ const tasks = await prisma.task.findMany({
 
     reminders.forEach((r) => remindedTaskIds.add(r.taskId));
   }
+
+  /* ---------------------------------------------
+   Advice map (only if logged in)
+----------------------------------------------- */
+const advisedTaskIds = new Set<string>();
+
+if (userId) {
+  const adviceComments = await prisma.comment.findMany({
+    where: {
+      userId,
+      taskId: { in: taskIds },
+      task: { type: "advice" },
+    },
+    select: { taskId: true },
+  });
+
+  adviceComments.forEach((c) => advisedTaskIds.add(c.taskId));
+}
 
   /* ---------------------------------------------
      Voting map (public)
@@ -379,10 +478,18 @@ const tasks = await prisma.task.findMany({
           ? task.Push?.length > 0
           : false,
 
+            // 🔥 ADVICE
+  hasAdvised:
+    userId && t.type === "advice"
+      ? advisedTaskIds.has(t.id)
+      : false,
+
+
       hasReminded: userId ? remindedTaskIds.has(t.id) : false,
 
       votes: transformedVotes,
       votedOption: userId ? userVoteMap[t.id] ?? null : null,
+      hasVoted: userId ? Boolean(userVoteMap[t.id]) : false,
     };
   });
 }

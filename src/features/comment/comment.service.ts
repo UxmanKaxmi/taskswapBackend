@@ -1,11 +1,15 @@
 import { schedulePush } from "../../utils/scheduleReminderPush";
 import { prisma } from "../../db/client";
 import { CreateCommentInput } from "./comment.types";
-import { createCommentMentionNotifications } from "../notification/notification.service";
+import {
+  createCommentMentionNotifications,
+  createTaskAdviceNotification,
+} from "../notification/notification.service";
+import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 
 export async function createComment(input: CreateCommentInput) {
-  // wrap in a transaction so comment + notifications stay consistent
   return prisma.$transaction(async (tx) => {
+    // 1️⃣ Create comment
     const comment = await tx.comment.create({
       data: {
         text: input.text,
@@ -14,13 +18,20 @@ export async function createComment(input: CreateCommentInput) {
       },
     });
 
+    // 2️⃣ Advice notification (task owner)
+    await createTaskAdviceNotification(tx, {
+      taskId: input.taskId,
+      senderId: input.userId,
+      commentText: input.text,
+    });
+
+    // 3️⃣ Mention notifications
     const mentionedIds = (input.mentions ?? []).filter(
       (id) => id !== input.userId
-    ); // don't notify self
+    );
 
     if (mentionedIds.length) {
-      // create in-app notifications
-      await createCommentMentionNotifications({
+      await createCommentMentionNotifications(tx, {
         mentionedIds,
         senderId: input.userId,
         taskId: input.taskId,
@@ -28,11 +39,12 @@ export async function createComment(input: CreateCommentInput) {
         commentText: input.text,
       });
 
-      // optional: push notifications
+      // 🔔 Push notifications (non-transactional on purpose)
       const recipients = await tx.user.findMany({
         where: { id: { in: mentionedIds } },
         select: { fcmToken: true },
       });
+
       await Promise.all(
         recipients
           .filter((u) => !!u.fcmToken)
@@ -50,6 +62,7 @@ export async function createComment(input: CreateCommentInput) {
     return comment;
   });
 }
+
 
 export async function getCommentsForTask(taskId: string, viewerId: string | null) {
   const comments = await prisma.comment.findMany({
