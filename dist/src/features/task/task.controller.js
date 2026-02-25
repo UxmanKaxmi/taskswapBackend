@@ -7,18 +7,22 @@ exports.handleGetTaskById = handleGetTaskById;
 exports.handleDeleteTask = handleDeleteTask;
 exports.handleMarkTaskAsDone = handleMarkTaskAsDone;
 exports.handleMarkTaskNotDone = handleMarkTaskNotDone;
+exports.handleGetTaskViewCount = handleGetTaskViewCount;
+exports.handleIncreaseTaskViewCount = handleIncreaseTaskViewCount;
 const task_service_1 = require("./task.service");
 const errors_1 = require("../../errors");
 const task_schema_1 = require("./task.schema");
 const zod_1 = require("zod");
+/* -------------------------------------------------------
+   CREATE TASK (AUTH REQUIRED)
+---------------------------------------------------------*/
 async function handleCreateTask(req, res, next) {
     const userId = req.user?.id;
     if (!userId) {
         return next(new errors_1.BadRequestError("User ID is missing"));
     }
     try {
-        const parsed = task_schema_1.taskSchema.parse(req.body); // Validated and type-safe
-        console.log("parsed", parsed);
+        const parsed = task_schema_1.taskSchema.parse(req.body);
         const taskInput = {
             ...parsed,
             userId,
@@ -34,9 +38,12 @@ async function handleCreateTask(req, res, next) {
                 issues: error.errors,
             });
         }
-        next(error); // Only call this if it’s not a Zod error
+        next(error);
     }
 }
+/* -------------------------------------------------------
+   UPDATE TASK (AUTH REQUIRED)
+---------------------------------------------------------*/
 async function handleUpdateTask(req, res, next) {
     const { id } = req.params;
     try {
@@ -58,16 +65,17 @@ async function handleUpdateTask(req, res, next) {
         next(error);
     }
 }
+/* -------------------------------------------------------
+   GET ALL TASKS (OPTIONAL AUTH → PUBLIC FEED)
+---------------------------------------------------------*/
 async function handleGetTasks(req, res, next) {
-    const userId = req.user?.id;
-    if (!userId) {
-        return next(new errors_1.BadRequestError("User ID is required"));
-    }
     try {
+        // OPTIONAL — userId may be null
+        const userId = req.user?.id ?? null;
         const limit = req.query.limit
             ? parseInt(req.query.limit, 10)
             : undefined;
-        const excludeSelf = req.query.excludeSelf === "true"; // default false if not set
+        const excludeSelf = req.query.excludeSelf === "true";
         const tasks = await (0, task_service_1.getAllTasks)(userId, { limit, excludeSelf });
         res.status(200).json(tasks);
     }
@@ -76,17 +84,20 @@ async function handleGetTasks(req, res, next) {
         next(error);
     }
 }
+/* -------------------------------------------------------
+   GET SINGLE TASK (OPTIONAL AUTH → PUBLIC POST VIEW)
+---------------------------------------------------------*/
+/* -------------------------------------------------------
+   GET ONE TASK (public)
+---------------------------------------------------------*/
 async function handleGetTaskById(req, res, next) {
     try {
         const { id } = req.params;
-        const userId = req.user?.id;
-        if (!userId) {
-            return next(new errors_1.BadRequestError("User ID is required"));
-        }
+        const userId = req.user?.id ?? null;
         const task = await (0, task_service_1.getTaskById)(id, userId);
+        // ❌ Your old version did NOT return after sending 404 → bug
         if (!task) {
             res.status(404).json({ error: "Task not found" });
-            return;
         }
         res.status(200).json(task);
     }
@@ -95,6 +106,9 @@ async function handleGetTaskById(req, res, next) {
         next(error);
     }
 }
+/* -------------------------------------------------------
+   DELETE TASK (AUTH REQUIRED)
+---------------------------------------------------------*/
 async function handleDeleteTask(req, res, next) {
     const { id } = req.params;
     try {
@@ -106,14 +120,15 @@ async function handleDeleteTask(req, res, next) {
             res.status(404).json({ error: "Task not found" });
         }
         console.error("[TASK_DELETE_ERROR]", error);
-        next(error); // Let errorHandler.ts figure out the response
+        next(error);
     }
 }
+/* -------------------------------------------------------
+   MARK TASK AS DONE (AUTH REQUIRED)
+---------------------------------------------------------*/
 async function handleMarkTaskAsDone(req, res, next) {
-    console.log("PATCH /tasks/:id/complete hit with ID:", req.params.id);
     const taskId = req.params.id;
     const userId = req.user?.id;
-    console.log("[PATCH TASK] incoming task ID:", req.params.id);
     if (!userId) {
         return next(new errors_1.BadRequestError("User ID is required"));
     }
@@ -126,10 +141,12 @@ async function handleMarkTaskAsDone(req, res, next) {
         next(error);
     }
 }
+/* -------------------------------------------------------
+   MARK TASK AS NOT DONE (AUTH REQUIRED)
+---------------------------------------------------------*/
 async function handleMarkTaskNotDone(req, res, next) {
     const taskId = req.params.id;
     const userId = req.user?.id;
-    console.log("[PATCH TASK] incoming task ID:", req.params.id);
     if (!userId) {
         return next(new errors_1.BadRequestError("User ID is required"));
     }
@@ -138,7 +155,30 @@ async function handleMarkTaskNotDone(req, res, next) {
         res.status(200).json(updated);
     }
     catch (error) {
-        console.error("[TASK_COMPLETE_ERROR]", error);
+        console.error("[TASK_NOT_DONE_ERROR]", error);
         next(error);
+    }
+}
+async function handleGetTaskViewCount(req, res, next) {
+    try {
+        const { id } = req.params;
+        const viewCount = await (0, task_service_1.getTaskViewCount)(id);
+        if (viewCount === null) {
+            res.status(404).json({ error: "Task not found" });
+        }
+        res.json({ viewCount });
+    }
+    catch (err) {
+        next(err);
+    }
+}
+async function handleIncreaseTaskViewCount(req, res, next) {
+    try {
+        const { id } = req.params;
+        await (0, task_service_1.increaseTaskViewCount)(id);
+        res.json({ success: true });
+    }
+    catch (err) {
+        next(err);
     }
 }

@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "engines": {
+    "node": ">=18",
+    "bun": ">=1.1.0"
+  },
   "dependencies": {
     "@prisma/client": "^6.7.0",
     "axios": "^1.13.2",
@@ -17,15 +21,15 @@
     "zod": "^3.25.28"
   },
   "scripts": {
-    "dev": "NODE_ENV=development ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "prisma generate && tsc",
+    "dev": "NODE_ENV=development ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/index.ts",
+    "build": "prisma generate && tsc && tsc-alias",
     "start": "node dist/src/index.js",
     "test": "cross-env DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test?schema=public\" prisma migrate reset --force --skip-generate && jest",
     "test-reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
-    "db-migrate": "npx prisma migrate dev --name init && npx prisma generate",
+    "db-migrate": "prisma migrate dev --name init && prisma generate",
     "seed": "ts-node --esm prisma/seed.ts",
     "create-feature": "ts-node scripts/createFeature.ts",
-    "db-reset": "npx prisma migrate reset --force",
+    "db-reset": "prisma migrate reset --force",
     "postinstall": "prisma generate",
     "postdeploy": "prisma migrate deploy",
     "db-start": "psql -h localhost -p 5432 -U postgres"
@@ -46,6 +50,8 @@
     "ts-jest": "^29.3.2",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
+    "tsc-alias": "^1.8.16",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3"
   }
 }

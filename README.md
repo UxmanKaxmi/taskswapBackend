@@ -57,12 +57,16 @@ Backend API for the Push Me Up (formerly TaskSwap) app. Built with Express + Typ
 
 - Node.js 18+ recommended
 - PostgreSQL
-- Yarn (recommended) or npm
+- Yarn, npm, or Bun
 - Firebase Admin service account JSON for push notifications
 
 ## Environment Variables
 
-The app loads `.env` in development and `.env.production` in production via `src/db/client.ts`.
+The app loads environment files via `src/config/env.ts`:
+
+- Development: `.env.dev` (falls back to `.env`)
+- Test: `.env.test` (falls back to `.env`)
+- Production: `.env.production` (falls back to `.env`)
 
 Required:
 
@@ -93,9 +97,9 @@ Note: Do not commit real secrets. Use placeholder values locally.
 
 Common commands:
 
-- `yarn db-migrate`
-- `yarn db-reset`
-- `yarn seed`
+- `yarn db-migrate` / `npm run db-migrate` / `bun run db-migrate`
+- `yarn db-reset` / `npm run db-reset` / `bun run db-reset`
+- `yarn seed` / `npm run seed` / `bun run seed`
 
 ## Running Locally
 
@@ -103,37 +107,51 @@ Common commands:
 
 ```
 yarn install
+# or
+npm install
+# or
+bun install
 ```
 
 2. Configure env
 
-- Create `.env` with required variables.
+- Create `.env.dev` (or `.env`) with required variables.
 
 3. Run migrations
 
 ```
 yarn db-migrate
+# or
+npm run db-migrate
+# or
+bun run db-migrate
 ```
 
 4. Start the dev server
 
 ```
 yarn dev
+# or
+npm run dev
+# or
+bun run dev
 ```
 
 Server runs on `http://localhost:3001` with a health check at `/health`.
 
 ## Scripts
 
-- `yarn dev` Start the dev server with ts-node-dev
-- `yarn build` Generate Prisma client and compile TypeScript
-- `yarn start` Run the compiled server from `dist/`
-- `yarn test` Reset test DB and run Jest
-- `yarn test-reset` Full reset and test run
-- `yarn db-migrate` Prisma migrate dev + generate
-- `yarn db-reset` Prisma migrate reset
-- `yarn seed` Run DB seed
-- `yarn create-feature` Scaffolds a new feature
+- `dev` Start the dev server with ts-node-dev
+- `build` Generate Prisma client and compile TypeScript
+- `start` Run the compiled server from `dist/`
+- `test` Reset test DB and run Jest
+- `test-reset` Full reset and test run
+- `db-migrate` Prisma migrate dev + generate
+- `db-reset` Prisma migrate reset
+- `seed` Run DB seed
+- `create-feature` Scaffolds a new feature
+
+Run scripts with `yarn <script>`, `npm run <script>`, or `bun run <script>`.
 
 ## API Routes (Top-Level)
 

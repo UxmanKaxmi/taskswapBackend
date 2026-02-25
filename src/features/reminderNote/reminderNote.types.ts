@@ -21,5 +21,6 @@ export interface ReminderNoteDTO {
   message: string;
   createdAt: string;
   senderName: string;
+  isSenderCurrentUser: boolean;
   senderPhoto?: string | null;
 }

@@ -1,11 +1,11 @@
 "use strict";
-// src/features/reminderNote/reminderNote.service.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendReminderNote = sendReminderNote;
 exports.getRemindersByTask = getRemindersByTask;
 const sendPushNotification_1 = require("../../utils/sendPushNotification");
 const client_1 = require("../../db/client");
 const errors_1 = require("../../errors");
+const notificationTypes_1 = require("../../types/notificationTypes");
 async function sendReminderNote({ taskId, senderId, message, }) {
     if (!message?.trim()) {
         throw new errors_1.BadRequestError("Reminder message cannot be empty.");
@@ -15,62 +15,46 @@ async function sendReminderNote({ taskId, senderId, message, }) {
         select: {
             userId: true,
             text: true,
-            user: {
-                select: { fcmToken: true },
-            },
+            type: true,
+            user: { select: { fcmToken: true } },
         },
     });
-    if (!task) {
+    if (!task)
         throw new errors_1.BadRequestError("Task not found.");
-    }
-    if (task.userId === senderId) {
+    if (task.userId === senderId)
         throw new errors_1.BadRequestError("You cannot remind yourself.");
-    }
+    // Notify task owner via push
     if (task.user?.fcmToken) {
         await (0, sendPushNotification_1.sendPushNotification)(task.user.fcmToken, "⏰ You got a reminder!", message);
     }
-    if (!task) {
-        throw new errors_1.BadRequestError("Task not found.");
-    }
-    if (task.userId === senderId) {
-        throw new errors_1.BadRequestError("You cannot remind yourself.");
-    }
+    // Prevent duplicate reminders from same user
     const existing = await client_1.prisma.reminderNote.findFirst({
-        where: {
-            taskId,
-            senderId,
-        },
+        where: { taskId, senderId },
     });
     if (existing) {
         throw new errors_1.BadRequestError("You already sent a reminder for this task.");
     }
     const reminder = await client_1.prisma.reminderNote.create({
-        data: {
-            taskId,
-            senderId,
-            message,
-        },
+        data: { taskId, senderId, message },
     });
     const sender = await client_1.prisma.user.findUnique({
         where: { id: senderId },
         select: { name: true, photo: true },
     });
-    if (!sender) {
-        throw new errors_1.BadRequestError("Sender not found.");
-    }
-    // ✅ Send notification to task owner
+    // Create notification entry
     await client_1.prisma.notification.create({
         data: {
             userId: task.userId,
             senderId,
-            type: "reminder",
+            type: notificationTypes_1.NOTIFICATION_TYPES.REMINDER,
+            taskType: task.type,
             message: `${sender?.name ?? "Someone"} reminded you about your task.`,
             metadata: {
                 taskId,
                 senderId,
                 taskText: task.text,
-                senderName: sender.name,
-                senderPhoto: sender.photo,
+                senderName: sender?.name,
+                senderPhoto: sender?.photo,
             },
         },
     });
@@ -81,21 +65,20 @@ async function getRemindersByTask(taskId, userId) {
         where: { taskId },
         orderBy: { createdAt: "desc" },
         include: {
-            sender: {
-                select: {
-                    name: true,
-                    photo: true,
-                },
-            },
+            sender: { select: { name: true, photo: true } },
         },
     });
-    return notes.map((note) => ({
-        id: note.id,
-        taskId: note.taskId,
-        senderId: note.senderId,
-        message: note.message,
-        createdAt: note.createdAt.toISOString(),
-        senderName: note.sender?.name ?? "Unknown",
-        senderPhoto: note.sender?.photo ?? null,
-    }));
+    return notes.map((note) => {
+        const isSenderCurrentUser = !!userId && note.senderId === userId;
+        return {
+            id: note.id,
+            taskId: note.taskId,
+            senderId: note.senderId,
+            message: note.message,
+            createdAt: note.createdAt.toISOString(),
+            senderName: note.sender?.name ?? "Unknown",
+            isSenderCurrentUser,
+            senderPhoto: note.sender?.photo ?? null,
+        };
+    });
 }

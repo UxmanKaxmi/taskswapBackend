@@ -2,6 +2,7 @@ import { User } from "@prisma/client";
 import { prisma } from "../../db/client";
 import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
+import { getRecentTasksForUserProfile } from "../task/task.service";
 
 export async function syncUserToDB({
   id,
@@ -354,22 +355,7 @@ export async function getUserProfileById(
     getFollowersCount(targetUserId),
     getFollowingCount(targetUserId),
     getTaskStatsForUser(targetUserId),
-    prisma.task.findMany({
-      where: { userId: targetUserId },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: {
-        id: true,
-        text: true,
-        type: true,
-        createdAt: true,
-        completed: true,
-        remindAt: true,
-        options: true,
-        deliverAt: true,
-        helpers: { select: { id: true, name: true, photo: true } },
-      },
-    }),
+    getRecentTasksForUserProfile(targetUserId, currentUserId, 5),
     currentUserId ? getMutualFriends(currentUserId, targetUserId) : [],
   ]);
 

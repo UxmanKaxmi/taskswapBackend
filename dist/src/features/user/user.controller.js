@@ -117,28 +117,24 @@ async function handleToggleFollowUser(req, res, next) {
     }
 }
 async function handleGetFollowers(req, res, next) {
-    try {
-        if (!req.user?.id) {
-            return next(new AppError_1.AppError("Unauthorized: Missing user ID", 401));
-        }
-        const followers = await (0, user_service_1.getFollowers)(req.user?.id);
-        res.status(200).json(followers);
+    const targetUserId = req.query.userId || req.user?.id || null;
+    if (!targetUserId) {
+        return res.status(200).json([]);
     }
-    catch (error) {
-        next(new AppError_1.AppError("Failed to fetch followers", 500));
-    }
+    const followers = await (0, user_service_1.getFollowers)(targetUserId);
+    res.status(200).json(followers);
 }
 async function handleGetFollowing(req, res, next) {
     try {
-        if (!req.user?.id) {
-            return next(new AppError_1.AppError("Unauthorized: Missing user ID", 401));
+        const targetUserId = req.params.userId || req.user?.id || null;
+        if (!targetUserId) {
+            return res.status(200).json([]);
         }
-        const following = await (0, user_service_1.getFollowing)(req.user?.id);
-        console.log("💥 Backend userId:", req.user?.id);
+        const following = await (0, user_service_1.getFollowing)(targetUserId);
         res.status(200).json(following);
     }
     catch (error) {
-        next(new AppError_1.AppError("Failed to fetch following", 500));
+        next(error);
     }
 }
 async function handleGetMe(req, res, next) {
@@ -160,7 +156,6 @@ async function handleGetMe(req, res, next) {
             followingCount,
             taskSuccessRate: taskStats.successRate,
             tasksDone: taskStats.tasksDone,
-            dayStreak: taskStats.dayStreak,
         });
     }
     catch (err) {
@@ -187,8 +182,8 @@ async function searchFriends(req, res, next) {
 }
 async function handleGetUserProfile(req, res, next) {
     const targetUserId = req.params.id;
-    const currentUserId = req.user?.id;
-    if (!targetUserId || !currentUserId) {
+    const currentUserId = req.user?.id ?? null;
+    if (!targetUserId) {
         return next(new AppError_1.AppError("Invalid user ID", 400));
     }
     try {
@@ -196,7 +191,6 @@ async function handleGetUserProfile(req, res, next) {
         res.status(200).json(profile);
     }
     catch (error) {
-        console.error("[GET_USER_PROFILE_ERROR]", error);
         next(error instanceof AppError_1.AppError ? error : new AppError_1.AppError("Unexpected error", 500));
     }
 }

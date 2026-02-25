@@ -46,19 +46,21 @@ export async function togglePushForTask({
     pushCount = await prisma.push.count({ where: { taskId } });
     hasPushed = true;
 
-    // 🔔 Normal motivation push notification
+    // 🔔 Normal motivation push notification (skip self)
     await createMotivationPushNotification({
       taskId,
       taskOwnerId: task.userId,
       pushedByUserId: userId,
     });
 
-    // 🔥 Milestone check
-    await createMotivationMilestoneNotification({
-      taskId,
-      taskOwnerId: task.userId,
-    pushCount: 10, // 👈 force milestone
-    });
+    // 🔥 Milestone check (skip self, use actual count)
+    if (userId !== task.userId) {
+      await createMotivationMilestoneNotification({
+        taskId,
+        taskOwnerId: task.userId,
+        pushCount,
+      });
+    }
   }
 
   return {

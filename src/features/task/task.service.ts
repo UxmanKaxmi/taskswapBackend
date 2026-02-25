@@ -16,6 +16,37 @@ import {
   createDecisionTaskDoneNotifications,
 } from "../notification/notification.service";
 
+type FeedTask = {
+  id: string;
+  text: string;
+  type: TaskType;
+  createdAt: Date;
+  userId: string;
+  remindAt: Date | null;
+  options: string[];
+  deliverAt: Date | null;
+  avatar: string;
+  name: string;
+  completed: boolean;
+  completedAt: Date | null;
+  isPublic: boolean;
+  viewCount: number;
+  helpers: {
+    id: string;
+    name: string;
+    email: string;
+    photo: string | null;
+  }[];
+  _count: {
+    Comment: number;
+    ReminderNote: number;
+    Vote: number;
+    helpers: number;
+    Push: number;
+  };
+  Push?: { id: string }[];
+};
+
 /* -------------------------------------------------------
    INTERNAL UTILS
 --------------------------------------------------------- */
@@ -56,6 +87,107 @@ function hasHelpers(
   input: CreateTaskInput
 ): input is ReminderTaskType | AdviceTaskType | MotivationTaskType | DecisionTaskType {
   return "helpers" in input && Array.isArray(input.helpers);
+}
+
+async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) {
+  const taskIds = tasks.map((t) => t.id);
+  const viewerId = userId ?? null;
+
+  if (taskIds.length === 0) {
+    return [];
+  }
+
+  const remindedTaskIds = new Set<string>();
+
+  if (viewerId) {
+    const reminders = await prisma.reminderNote.findMany({
+      where: { senderId: viewerId, taskId: { in: taskIds } },
+      select: { taskId: true },
+    });
+
+    reminders.forEach((r) => remindedTaskIds.add(r.taskId));
+  }
+
+  const advisedTaskIds = new Set<string>();
+
+  if (viewerId) {
+    const adviceComments = await prisma.comment.findMany({
+      where: {
+        userId: viewerId,
+        taskId: { in: taskIds },
+        task: { type: "advice" },
+      },
+      select: { taskId: true },
+    });
+
+    adviceComments.forEach((c) => advisedTaskIds.add(c.taskId));
+  }
+
+  const allVotes = await prisma.vote.findMany({
+    where: { taskId: { in: taskIds } },
+    select: {
+      taskId: true,
+      option: true,
+      user: { select: { id: true, name: true, photo: true } },
+    },
+  });
+
+  const voteMap: Record<
+    string,
+    Record<
+      string,
+      { count: number; voters: { id: string; name: string; photo?: string }[] }
+    >
+  > = {};
+
+  for (const { taskId, option, user } of allVotes) {
+    if (!voteMap[taskId]) voteMap[taskId] = {};
+    if (!voteMap[taskId][option]) voteMap[taskId][option] = { count: 0, voters: [] };
+    voteMap[taskId][option].count++;
+    voteMap[taskId][option].voters.push({ ...user, photo: user.photo ?? undefined });
+  }
+
+  const userVoteMap: Record<string, string> = {};
+
+  if (viewerId) {
+    const userVotes = await prisma.vote.findMany({
+      where: { userId: viewerId, taskId: { in: taskIds } },
+      select: { taskId: true, option: true },
+    });
+
+    userVotes.forEach(({ taskId, option }) => {
+      userVoteMap[taskId] = option;
+    });
+  }
+
+  return tasks.map((task) => {
+    const { _count, ...cleanTask } = task;
+    const taskVotes = voteMap[task.id] || {};
+
+    const transformedVotes = Object.fromEntries(
+      Object.entries(taskVotes).map(([opt, v]) => [
+        opt,
+        { count: v.count, preview: v.voters.slice(0, 4) },
+      ])
+    );
+
+    return {
+      ...cleanTask,
+      commentsCount: task._count.Comment,
+      reminderNoteCount: task._count.ReminderNote,
+      voteCount: task._count.Vote,
+      helpersCount: task._count.helpers,
+      pushCount: task.type === "motivation" ? task._count.Push : 0,
+      hasPushed:
+        viewerId && task.type === "motivation" ? (task.Push?.length ?? 0) > 0 : false,
+      hasAdvised:
+        viewerId && task.type === "advice" ? advisedTaskIds.has(task.id) : false,
+      hasReminded: viewerId ? remindedTaskIds.has(task.id) : false,
+      votes: transformedVotes,
+      votedOption: viewerId ? userVoteMap[task.id] ?? null : null,
+      hasVoted: viewerId ? Boolean(userVoteMap[task.id]) : false,
+    };
+  });
 }
 
 /* -------------------------------------------------------
@@ -298,9 +430,27 @@ if (userId && task.type === "advice") {
   hasAdvised = !!advice;
 }
 
+let hasReminded = false;
+
+if (userId) {
+  const reminder = await prisma.reminderNote.findFirst({
+    where: {
+      taskId,
+      senderId: userId,
+    },
+    select: { id: true },
+  });
+
+  hasReminded = !!reminder;
+}
+
+const pushItems = Array.isArray((task as { Push?: any[] }).Push)
+  ? (task as { Push: any[] }).Push
+  : [];
+
 const pushHistory =
   task.type === "motivation"
-    ? task.Push.map((p) => ({
+    ? pushItems.map((p) => ({
         user: p.user,
         pushedAt: p.createdAt,
       }))
@@ -313,14 +463,13 @@ const pushHistory =
     viewCount: task.viewCount, // 👈 ADD THIS
     hasVoted, // 👈 ADD THIS
 
-     pushCount: task.type === "motivation" ? task._count.Push : 0,
-  hasPushed:
-    userId && task.type === "motivation"
-      ? task.Push?.length > 0
-      : false,
-        pushHistory, // 👈 ADD THIS
+    pushCount: task.type === "motivation" ? task._count.Push : 0,
+    hasPushed:
+      userId && task.type === "motivation" ? pushItems.length > 0 : false,
+    pushHistory, // 👈 ADD THIS
 
-        hasAdvised,
+    hasAdvised,
+    hasReminded,
 
   };
 }
@@ -350,7 +499,7 @@ const tasks = await prisma.task.findMany({
   where: userId ? { userId: { in: taskFilterUserIds } } : {},
   include: {
     helpers: { select: { id: true, name: true, email: true, photo: true } },
-    _count: true,
+    _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
     Push: userId
       ? {
           where: { userId },
@@ -362,136 +511,31 @@ const tasks = await prisma.task.findMany({
   take: helpers?.limit,
 });
 
-  const taskIds = tasks.map((t) => t.id);
-
-  /* ---------------------------------------------
-     Only logged-in users have reminder info
-  ----------------------------------------------- */
-  const remindedTaskIds = new Set<string>();
-
-  if (userId) {
-    const reminders = await prisma.reminderNote.findMany({
-      where: { senderId: userId },
-      select: { taskId: true },
-    });
-
-    reminders.forEach((r) => remindedTaskIds.add(r.taskId));
-  }
-
-  /* ---------------------------------------------
-   Advice map (only if logged in)
------------------------------------------------ */
-const advisedTaskIds = new Set<string>();
-
-if (userId) {
-  const adviceComments = await prisma.comment.findMany({
-    where: {
-      userId,
-      taskId: { in: taskIds },
-      task: { type: "advice" },
-    },
-    select: { taskId: true },
-  });
-
-  adviceComments.forEach((c) => advisedTaskIds.add(c.taskId));
+  return transformTasksForFeed(tasks as FeedTask[], userId);
 }
 
-  /* ---------------------------------------------
-     Voting map (public)
-  ----------------------------------------------- */
-
-  const allVotes = await prisma.vote.findMany({
-    where: { taskId: { in: taskIds } },
-    select: {
-      taskId: true,
-      option: true,
-      user: { select: { id: true, name: true, photo: true } },
+export async function getRecentTasksForUserProfile(
+  targetUserId: string,
+  currentUserId?: string | null,
+  limit = 5
+) {
+  const recentTasks = await prisma.task.findMany({
+    where: { userId: targetUserId },
+    include: {
+      helpers: { select: { id: true, name: true, email: true, photo: true } },
+      _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
+      Push: currentUserId
+        ? {
+            where: { userId: currentUserId },
+            select: { id: true },
+          }
+        : false,
     },
+    orderBy: { createdAt: "desc" },
+    take: limit,
   });
 
-  const voteMap: Record<
-    string,
-    Record<string, { count: number; voters: { id: string; name: string; photo?: string }[] }>
-  > = {};
-
-  for (const { taskId, option, user } of allVotes) {
-    if (!voteMap[taskId]) voteMap[taskId] = {};
-    if (!voteMap[taskId][option]) voteMap[taskId][option] = { count: 0, voters: [] };
-    voteMap[taskId][option].count++;
-    voteMap[taskId][option].voters.push({ ...user, photo: user.photo ?? undefined });
-  }
-
-  /* ---------------------------------------------
-     User vote map (only if logged in)
-  ----------------------------------------------- */
-  const userVoteMap: Record<string, string> = {};
-
-  if (userId) {
-    const userVotes = await prisma.vote.findMany({
-      where: { userId, taskId: { in: taskIds } },
-      select: { taskId: true, option: true },
-    });
-
-    userVotes.forEach(({ taskId, option }) => {
-      userVoteMap[taskId] = option;
-    });
-  }
-
-  /* ---------------------------------------------
-     FINAL TRANSFORMATION
-  ----------------------------------------------- */
-
-  return tasks.map((task) => {
-    const t = task as typeof task & {
-      _count: {
-        comments: number;
-        ReminderNote: number;
-        Vote: number;
-        helpers: number;
-        Push: number;
-      };
-    };
-
-    const { _count, ...cleanTask } = t; // 👈 REMOVE _count from output
-
-    const taskVotes = voteMap[t.id] || {};
-
-    const transformedVotes = Object.fromEntries(
-      Object.entries(taskVotes).map(([opt, v]) => [
-        opt,
-        { count: v.count, preview: v.voters.slice(0, 4) },
-      ])
-    );
-
-    return {
-      ...cleanTask,
-
-      commentsCount: t._count.Comment,
-      reminderNoteCount: t._count.ReminderNote,
-      voteCount: t._count.Vote,
-      helpersCount: t._count.helpers,
-
-      // 🔥 PUSH (only meaningful for motivation)
-      pushCount: t.type === "motivation" ? t._count.Push : 0,
-      hasPushed:
-        userId && t.type === "motivation"
-          ? task.Push?.length > 0
-          : false,
-
-            // 🔥 ADVICE
-  hasAdvised:
-    userId && t.type === "advice"
-      ? advisedTaskIds.has(t.id)
-      : false,
-
-
-      hasReminded: userId ? remindedTaskIds.has(t.id) : false,
-
-      votes: transformedVotes,
-      votedOption: userId ? userVoteMap[t.id] ?? null : null,
-      hasVoted: userId ? Boolean(userVoteMap[t.id]) : false,
-    };
-  });
+  return transformTasksForFeed(recentTasks as FeedTask[], currentUserId);
 }
 /* -------------------------------------------------------
    DELETE TASK

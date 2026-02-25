@@ -9,7 +9,7 @@ import {
 } from "./referral.types";
 import { shortenWithFDL } from "../../utils/fdl";
 
-const APP_WEB_ORIGIN = process.env.APP_WEB_ORIGIN ?? "https://taskswap.app";
+const APP_WEB_ORIGIN =  "https://PushMeUp.app";
 
 export async function getOrCreateReferralCode(userId: string) {
   const existing = await prisma.referralCode.findUnique({ where: { userId } });
@@ -95,8 +95,8 @@ export async function getReferralLink(
     refCode: code.code,
     stats,
     share: {
-      message: "Join me on TaskSwap — manage and share your tasks easily!",
-      title: "Invite to TaskSwap",
+      message: "Join me on Push Me Up — manage and share your tasks easily!",
+      title: "Invite to Push Me Up",
     },
   };
 }

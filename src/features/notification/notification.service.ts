@@ -9,7 +9,10 @@ const MOTIVATION_PUSH_MILESTONES = [10, 100, 500, 1000];
 // 📨 Get notifications for the logged-in user
 export async function getUserNotifications(userId: string) {
   return prisma.notification.findMany({
-    where: { userId },
+    where: {
+      userId,
+      NOT: { type: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE_SENT },
+    },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -360,6 +363,7 @@ export async function createMotivationMilestoneNotification({
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE_SENT,
       taskType: task.type,
       message: "milestone push sent",
+      read: true, // internal marker; never show as unread
       metadata: {
         taskId,
         pushCount,

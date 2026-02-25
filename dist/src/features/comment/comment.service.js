@@ -7,8 +7,8 @@ const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const client_1 = require("../../db/client");
 const notification_service_1 = require("../notification/notification.service");
 async function createComment(input) {
-    // wrap in a transaction so comment + notifications stay consistent
     return client_1.prisma.$transaction(async (tx) => {
+        // 1️⃣ Create comment
         const comment = await tx.comment.create({
             data: {
                 text: input.text,
@@ -16,17 +16,23 @@ async function createComment(input) {
                 userId: input.userId,
             },
         });
-        const mentionedIds = (input.mentions ?? []).filter((id) => id !== input.userId); // don't notify self
+        // 2️⃣ Advice notification (task owner)
+        await (0, notification_service_1.createTaskAdviceNotification)(tx, {
+            taskId: input.taskId,
+            senderId: input.userId,
+            commentText: input.text,
+        });
+        // 3️⃣ Mention notifications
+        const mentionedIds = (input.mentions ?? []).filter((id) => id !== input.userId);
         if (mentionedIds.length) {
-            // create in-app notifications
-            await (0, notification_service_1.createCommentMentionNotifications)({
+            await (0, notification_service_1.createCommentMentionNotifications)(tx, {
                 mentionedIds,
                 senderId: input.userId,
                 taskId: input.taskId,
                 commentId: comment.id,
                 commentText: input.text,
             });
-            // optional: push notifications
+            // 🔔 Push notifications (non-transactional on purpose)
             const recipients = await tx.user.findMany({
                 where: { id: { in: mentionedIds } },
                 select: { fcmToken: true },
@@ -38,18 +44,12 @@ async function createComment(input) {
         return comment;
     });
 }
-async function getCommentsForTask(taskId, userId) {
+async function getCommentsForTask(taskId, viewerId) {
     const comments = await client_1.prisma.comment.findMany({
         where: { taskId },
         orderBy: { createdAt: "desc" },
         include: {
-            user: {
-                select: {
-                    id: true,
-                    name: true,
-                    photo: true,
-                },
-            },
+            user: { select: { id: true, name: true, photo: true } },
             likes: true,
         },
     });
@@ -62,7 +62,7 @@ async function getCommentsForTask(taskId, userId) {
         updatedAt: c.updatedAt?.toISOString(),
         user: c.user,
         likesCount: c.likes.length,
-        likedByMe: c.likes.some((like) => like.userId === userId),
+        likedByMe: viewerId ? c.likes.some((like) => like.userId === viewerId) : false, // ⭐ public safe
     }));
 }
 async function toggleCommentLike(commentId, userId, like) {

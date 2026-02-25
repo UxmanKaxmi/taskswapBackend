@@ -2,6 +2,7 @@ import { sendPushNotification } from "../../utils/sendPushNotification";
 import { prisma } from "../../db/client";
 import { BadRequestError } from "../../errors";
 import { ReminderNoteDTO, SendReminderNoteInput } from "./reminderNote.types";
+import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 
 export async function sendReminderNote({
   taskId,
@@ -17,6 +18,7 @@ export async function sendReminderNote({
     select: {
       userId: true,
       text: true,
+      type: true,
       user: { select: { fcmToken: true } },
     },
   });
@@ -57,7 +59,8 @@ export async function sendReminderNote({
     data: {
       userId: task.userId,
       senderId,
-      type: "reminder",
+      type: NOTIFICATION_TYPES.REMINDER,
+      taskType: task.type,
       message: `${sender?.name ?? "Someone"} reminded you about your task.`,
       metadata: {
         taskId,
@@ -74,7 +77,7 @@ export async function sendReminderNote({
 
 export async function getRemindersByTask(
   taskId: string,
-  _userId: string | null // <-- ⭐ userId is optional but kept for future personalization
+  userId: string | null
 ): Promise<ReminderNoteDTO[]> {
   const notes = await prisma.reminderNote.findMany({
     where: { taskId },
@@ -84,13 +87,18 @@ export async function getRemindersByTask(
     },
   });
 
-  return notes.map((note) => ({
-    id: note.id,
-    taskId: note.taskId,
-    senderId: note.senderId,
-    message: note.message,
-    createdAt: note.createdAt.toISOString(),
-    senderName: note.sender?.name ?? "Unknown",
-    senderPhoto: note.sender?.photo ?? null,
-  }));
+  return notes.map((note) => {
+    const isSenderCurrentUser = !!userId && note.senderId === userId;
+
+    return {
+      id: note.id,
+      taskId: note.taskId,
+      senderId: note.senderId,
+      message: note.message,
+      createdAt: note.createdAt.toISOString(),
+      senderName: note.sender?.name ?? "Unknown",
+      isSenderCurrentUser,
+      senderPhoto: note.sender?.photo ?? null,
+    };
+  });
 }

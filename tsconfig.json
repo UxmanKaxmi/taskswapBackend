@@ -11,7 +11,19 @@
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "baseUrl": "./src",
     "paths": {
-      "@types/*": ["types/*"]
+      "@app/*": ["app/*"],
+      "@features/*": ["features/*"],
+      "@shared/*": ["shared/*"],
+      "@assets/*": ["assets/*"],
+      "@lib/*": ["lib/*"],
+      "@navigation/*": ["navigation/*"],
+      "@db/*": ["db/*"],
+      "@middleware/*": ["middleware/*"],
+      "@types/*": ["types/*"],
+      "@utils/*": ["utils/*"],
+      "@errors/*": ["errors/*"],
+      "@models/*": ["models/*"],
+      "@config/*": ["config/*"]
     }
   },
   "include": ["src/**/*", "scripts/testNotificationInApp.ts"]

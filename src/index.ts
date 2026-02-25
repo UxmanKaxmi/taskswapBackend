@@ -1,4 +1,5 @@
 // index.ts
+import "./config/env";
 import express, { Router } from "express"; // ✅ Add Router here
 import cors from "cors";
 import taskRoutes from "./features/task/task.routes";
@@ -11,12 +12,11 @@ import referralRoutes from "./features/referral/referral.routes";
 import feedRoutes from "./features/feed/feed.routes";
 import pushRoutes from "./features/push/push.routes";
 
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "./db/client";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
 const PORT = 3001;
-const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
