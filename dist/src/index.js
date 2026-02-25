@@ -14,7 +14,6 @@ const notification_routes_1 = __importDefault(require("./features/notification/n
 const vote_routes_1 = __importDefault(require("./features/vote/vote.routes"));
 const comment_routes_1 = __importDefault(require("./features/comment/comment.routes"));
 const referral_routes_1 = __importDefault(require("./features/referral/referral.routes"));
-const feed_routes_1 = __importDefault(require("./features/feed/feed.routes"));
 const push_routes_1 = __importDefault(require("./features/push/push.routes"));
 const client_1 = require("./db/client");
 const errorHandler_1 = require("./middleware/errorHandler");
@@ -35,7 +34,6 @@ app.get("/test-db", async (req, res) => {
         res.status(500).json({ connected: false });
     }
 });
-app.use("/feed", feed_routes_1.default);
 app.use("/tasks", task_routes_1.default);
 app.use("/users", user_routes_1.default);
 app.use("/reminderNote", reminderNote_routes_1.default);

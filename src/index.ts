@@ -9,7 +9,6 @@ import notificationRoutes from "./features/notification/notification.routes";
 import voteRoutes from "./features/vote/vote.routes";
 import commentRoutes from "./features/comment/comment.routes";
 import referralRoutes from "./features/referral/referral.routes";
-import feedRoutes from "./features/feed/feed.routes";
 import pushRoutes from "./features/push/push.routes";
 
 import { prisma } from "./db/client";
@@ -33,8 +32,6 @@ app.get("/test-db", async (req, res) => {
     res.status(500).json({ connected: false });
   }
 });
-
-app.use("/feed", feedRoutes as Router);
 app.use("/tasks", taskRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);

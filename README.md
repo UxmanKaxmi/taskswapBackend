@@ -4,7 +4,7 @@ Backend API for the Push Me Up (formerly TaskSwap) app. Built with Express + Typ
 
 ## Overview
 
-- REST API for tasks, users, feeds, comments, votes, referrals, notifications, reminder notes, and motivation pushes.
+- REST API for tasks, users, comments, votes, referrals, notifications, reminder notes, and motivation pushes.
 - Prisma schema and migrations under `prisma/`.
 - Jest test suite under `__tests__/`.
 
@@ -33,7 +33,6 @@ Backend API for the Push Me Up (formerly TaskSwap) app. Built with Express + Typ
 │  └─ features/
 │     ├─ task/
 │     ├─ user/
-│     ├─ feed/
 │     ├─ comment/
 │     ├─ vote/
 │     ├─ notification/
@@ -157,7 +156,6 @@ Run scripts with `yarn <script>`, `npm run <script>`, or `bun run <script>`.
 
 Mounted in `src/index.ts`:
 
-- `/feed`
 - `/tasks`
 - `/users`
 - `/reminderNote`
