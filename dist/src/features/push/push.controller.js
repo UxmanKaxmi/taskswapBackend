@@ -4,11 +4,12 @@ exports.togglePush = togglePush;
 exports.getPushes = getPushes;
 exports.handleGetPush = handleGetPush;
 const push_service_1 = require("./push.service");
+const params_1 = require("../../utils/params");
 // POST /tasks/:id/push
 async function togglePush(req, res, next) {
     try {
         const userId = req.user?.id;
-        const taskId = req.params.id;
+        const taskId = (0, params_1.getParamString)(req.params.id);
         if (!taskId) {
             res.status(400).json({ message: "Missing taskId" });
             return;
@@ -30,7 +31,7 @@ async function togglePush(req, res, next) {
 // GET /tasks/:id/pushes
 async function getPushes(req, res, next) {
     try {
-        const taskId = req.params.id;
+        const taskId = (0, params_1.getParamString)(req.params.id);
         if (!taskId) {
             res.status(400).json({ message: "Missing taskId" });
             return;

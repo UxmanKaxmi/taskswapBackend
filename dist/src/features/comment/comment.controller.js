@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleCreateComment = handleCreateComment;
 exports.handleGetComments = handleGetComments;
 exports.handleToggleLike = handleToggleLike;
+const params_1 = require("../../utils/params");
 const comment_service_1 = require("./comment.service");
 const comment_schema_1 = require("./comment.schema");
 const errors_1 = require("../../errors");
@@ -23,7 +24,10 @@ async function handleCreateComment(req, res, next) {
 async function handleGetComments(req, res, next) {
     try {
         const viewerId = req.user?.id ?? null; // ⭐ PUBLIC-SAFE
-        const { taskId } = req.params;
+        const taskId = (0, params_1.getParamString)(req.params.taskId);
+        if (!taskId) {
+            return next(new errors_1.BadRequestError("Task ID is required"));
+        }
         const comments = await (0, comment_service_1.getCommentsForTask)(taskId, viewerId);
         res.status(200).json(comments);
     }

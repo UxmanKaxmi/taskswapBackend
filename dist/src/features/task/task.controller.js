@@ -13,6 +13,7 @@ const task_service_1 = require("./task.service");
 const errors_1 = require("../../errors");
 const task_schema_1 = require("./task.schema");
 const zod_1 = require("zod");
+const params_1 = require("../../utils/params");
 /* -------------------------------------------------------
    CREATE TASK (AUTH REQUIRED)
 ---------------------------------------------------------*/
@@ -45,8 +46,12 @@ async function handleCreateTask(req, res, next) {
    UPDATE TASK (AUTH REQUIRED)
 ---------------------------------------------------------*/
 async function handleUpdateTask(req, res, next) {
-    const { id } = req.params;
+    const id = (0, params_1.getParamString)(req.params.id);
     try {
+        if (!id) {
+            res.status(400).json({ error: "Missing task id" });
+            return;
+        }
         const parsed = task_schema_1.taskUpdateSchema.parse(req.body);
         if (Object.keys(parsed).length === 0) {
             res.status(400).json({ error: "Nothing to update" });
@@ -108,8 +113,12 @@ async function handleGetTasks(req, res, next) {
 ---------------------------------------------------------*/
 async function handleGetTaskById(req, res, next) {
     try {
-        const { id } = req.params;
+        const id = (0, params_1.getParamString)(req.params.id);
         const userId = req.user?.id ?? null;
+        if (!id) {
+            res.status(400).json({ error: "Missing task id" });
+            return;
+        }
         const task = await (0, task_service_1.getTaskById)(id, userId);
         // ❌ Your old version did NOT return after sending 404 → bug
         if (!task) {
@@ -126,8 +135,12 @@ async function handleGetTaskById(req, res, next) {
    DELETE TASK (AUTH REQUIRED)
 ---------------------------------------------------------*/
 async function handleDeleteTask(req, res, next) {
-    const { id } = req.params;
+    const id = (0, params_1.getParamString)(req.params.id);
     try {
+        if (!id) {
+            res.status(400).json({ error: "Missing task id" });
+            return;
+        }
         await (0, task_service_1.deleteTask)(id);
         res.status(204).send();
     }
@@ -143,10 +156,13 @@ async function handleDeleteTask(req, res, next) {
    MARK TASK AS DONE (AUTH REQUIRED)
 ---------------------------------------------------------*/
 async function handleMarkTaskAsDone(req, res, next) {
-    const taskId = req.params.id;
+    const taskId = (0, params_1.getParamString)(req.params.id);
     const userId = req.user?.id;
     if (!userId) {
         return next(new errors_1.BadRequestError("User ID is required"));
+    }
+    if (!taskId) {
+        return next(new errors_1.BadRequestError("Task ID is required"));
     }
     try {
         const updated = await (0, task_service_1.markTaskAsDone)(taskId, userId);
@@ -161,10 +177,13 @@ async function handleMarkTaskAsDone(req, res, next) {
    MARK TASK AS NOT DONE (AUTH REQUIRED)
 ---------------------------------------------------------*/
 async function handleMarkTaskNotDone(req, res, next) {
-    const taskId = req.params.id;
+    const taskId = (0, params_1.getParamString)(req.params.id);
     const userId = req.user?.id;
     if (!userId) {
         return next(new errors_1.BadRequestError("User ID is required"));
+    }
+    if (!taskId) {
+        return next(new errors_1.BadRequestError("Task ID is required"));
     }
     try {
         const updated = await (0, task_service_1.markTaskAsNotDone)(taskId, userId);
@@ -177,7 +196,11 @@ async function handleMarkTaskNotDone(req, res, next) {
 }
 async function handleGetTaskViewCount(req, res, next) {
     try {
-        const { id } = req.params;
+        const id = (0, params_1.getParamString)(req.params.id);
+        if (!id) {
+            res.status(400).json({ error: "Missing task id" });
+            return;
+        }
         const viewCount = await (0, task_service_1.getTaskViewCount)(id);
         if (viewCount === null) {
             res.status(404).json({ error: "Task not found" });
@@ -190,7 +213,11 @@ async function handleGetTaskViewCount(req, res, next) {
 }
 async function handleIncreaseTaskViewCount(req, res, next) {
     try {
-        const { id } = req.params;
+        const id = (0, params_1.getParamString)(req.params.id);
+        if (!id) {
+            res.status(400).json({ error: "Missing task id" });
+            return;
+        }
         await (0, task_service_1.increaseTaskViewCount)(id);
         res.json({ success: true });
     }

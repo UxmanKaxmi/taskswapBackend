@@ -1,5 +1,6 @@
 import { AppError } from "../../errors/AppError";
 import { prisma } from "../../db/client";
+import { Prisma } from "@prisma/client";
 import {
   CreateTaskInput,
   ReminderTaskType,
@@ -511,14 +512,7 @@ export async function getAllTasks(
   const fetchLimit = normalizedLimit + 1;
 
   const cursorId = helpers?.cursor?.trim();
-  const cursorClause = cursorId
-    ? {
-        cursor: { id: cursorId },
-        skip: 1,
-      }
-    : {};
-
-  const tasks = await prisma.task.findMany({
+  const findArgs: Prisma.TaskFindManyArgs = {
     where: userId ? { userId: { in: taskFilterUserIds } } : {},
     include: {
       helpers: { select: { id: true, name: true, email: true, photo: true } },
@@ -540,8 +534,14 @@ export async function getAllTasks(
     },
     orderBy: { createdAt: "desc" },
     take: fetchLimit,
-    ...cursorClause,
-  });
+  };
+
+  if (cursorId) {
+    findArgs.cursor = { id: cursorId };
+    findArgs.skip = 1;
+  }
+
+  const tasks = await prisma.task.findMany(findArgs);
 
   const hasMore = tasks.length === fetchLimit;
   const trimmed = hasMore ? tasks.slice(0, normalizedLimit) : tasks;

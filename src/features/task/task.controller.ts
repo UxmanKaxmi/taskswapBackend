@@ -14,6 +14,7 @@ import { BadRequestError } from "../../errors";
 import { CreateTaskInput } from "./task.types";
 import { taskSchema, taskUpdateSchema } from "./task.schema";
 import { ZodError } from "zod";
+import { getParamString } from "../../utils/params";
 
 /* -------------------------------------------------------
    CREATE TASK (AUTH REQUIRED)
@@ -61,9 +62,13 @@ export async function handleUpdateTask(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const { id } = req.params;
+  const id = getParamString(req.params.id);
 
   try {
+    if (!id) {
+      res.status(400).json({ error: "Missing task id" });
+      return;
+    }
     const parsed = taskUpdateSchema.parse(req.body);
 
     if (Object.keys(parsed).length === 0) {
@@ -145,8 +150,13 @@ export async function handleGetTaskById(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { id } = req.params;
+    const id = getParamString(req.params.id);
     const userId = req.user?.id ?? null;
+
+    if (!id) {
+      res.status(400).json({ error: "Missing task id" });
+      return;
+    }
 
     const task = await getTaskById(id, userId);
 
@@ -170,9 +180,13 @@ export async function handleDeleteTask(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const { id } = req.params;
+  const id = getParamString(req.params.id);
 
   try {
+    if (!id) {
+      res.status(400).json({ error: "Missing task id" });
+      return;
+    }
     await deleteTask(id);
     res.status(204).send();
   } catch (error: any) {
@@ -193,11 +207,14 @@ export async function handleMarkTaskAsDone(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const taskId = req.params.id;
+  const taskId = getParamString(req.params.id);
   const userId = req.user?.id;
 
   if (!userId) {
     return next(new BadRequestError("User ID is required"));
+  }
+  if (!taskId) {
+    return next(new BadRequestError("Task ID is required"));
   }
 
   try {
@@ -217,11 +234,14 @@ export async function handleMarkTaskNotDone(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const taskId = req.params.id;
+  const taskId = getParamString(req.params.id);
   const userId = req.user?.id;
 
   if (!userId) {
     return next(new BadRequestError("User ID is required"));
+  }
+  if (!taskId) {
+    return next(new BadRequestError("Task ID is required"));
   }
 
   try {
@@ -241,8 +261,12 @@ export async function handleGetTaskViewCount(
   next: NextFunction
 ) {
   try {
-    const { id } = req.params;
+    const id = getParamString(req.params.id);
 
+    if (!id) {
+      res.status(400).json({ error: "Missing task id" });
+      return;
+    }
     const viewCount = await getTaskViewCount(id);
 
     if (viewCount === null) {
@@ -261,8 +285,12 @@ export async function handleIncreaseTaskViewCount(
   next: NextFunction
 ) {
   try {
-    const { id } = req.params;
+    const id = getParamString(req.params.id);
 
+    if (!id) {
+      res.status(400).json({ error: "Missing task id" });
+      return;
+    }
     await increaseTaskViewCount(id);
 
     res.json({ success: true });

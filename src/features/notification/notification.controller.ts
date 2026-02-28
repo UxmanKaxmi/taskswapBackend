@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { getParamString } from "../../utils/params";
 import {
   getUserNotifications,
   markNotificationAsRead,
@@ -30,7 +31,11 @@ export async function handleMarkNotificationAsRead(
   next: NextFunction
 ) {
   try {
-    const notificationId = req.params.id;
+    const notificationId = getParamString(req.params.id);
+    if (!notificationId) {
+      res.status(400).json({ message: "Missing notificationId" });
+      return;
+    }
     const result = await markNotificationAsRead(notificationId);
     res.status(200).json(result);
   } catch (error) {

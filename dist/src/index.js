@@ -15,6 +15,7 @@ const vote_routes_1 = __importDefault(require("./features/vote/vote.routes"));
 const comment_routes_1 = __importDefault(require("./features/comment/comment.routes"));
 const referral_routes_1 = __importDefault(require("./features/referral/referral.routes"));
 const push_routes_1 = __importDefault(require("./features/push/push.routes"));
+const featureFlags_routes_1 = __importDefault(require("./features/featureFlags/featureFlags.routes"));
 const client_1 = require("./db/client");
 const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
@@ -41,6 +42,7 @@ app.use("/notification", notification_routes_1.default);
 app.use("/vote", vote_routes_1.default);
 app.use("/comments", comment_routes_1.default);
 app.use("/referrals", referral_routes_1.default);
+app.use("/features", featureFlags_routes_1.default);
 // Push routes, we need Task here
 app.use("/tasks", push_routes_1.default);
 app.use(errorHandler_1.errorHandler);

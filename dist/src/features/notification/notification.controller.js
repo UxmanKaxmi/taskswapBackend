@@ -4,6 +4,7 @@ exports.handleGetNotifications = handleGetNotifications;
 exports.handleMarkNotificationAsRead = handleMarkNotificationAsRead;
 exports.handleBatchMarkNotificationsAsRead = handleBatchMarkNotificationsAsRead;
 exports.handleTestSendNotification = handleTestSendNotification;
+const params_1 = require("../../utils/params");
 const notification_service_1 = require("./notification.service");
 async function handleGetNotifications(req, res, next) {
     try {
@@ -21,7 +22,11 @@ async function handleGetNotifications(req, res, next) {
 }
 async function handleMarkNotificationAsRead(req, res, next) {
     try {
-        const notificationId = req.params.id;
+        const notificationId = (0, params_1.getParamString)(req.params.id);
+        if (!notificationId) {
+            res.status(400).json({ message: "Missing notificationId" });
+            return;
+        }
         const result = await (0, notification_service_1.markNotificationAsRead)(notificationId);
         res.status(200).json(result);
     }

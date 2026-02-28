@@ -16,6 +16,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const errors_1 = require("../../errors");
 const AppError_1 = require("../../errors/AppError");
 const user_service_2 = require("./user.service");
+const params_1 = require("../../utils/params");
 const user_service_3 = require("./user.service");
 async function handleSyncUser(req, res, next) {
     const { id, email, name, photo, fcmToken } = req.body;
@@ -99,12 +100,15 @@ async function handleMatchUsers(req, res, next) {
 // }
 async function handleToggleFollowUser(req, res, next) {
     const followerId = req.user?.id;
-    const followingId = req.params.userId;
-    if (followerId === followingId) {
+    const followingId = (0, params_1.getParamString)(req.params.userId);
+    if (followerId && followingId && followerId === followingId) {
         throw new AppError_1.AppError("You cannot follow yourself", 400);
     }
     if (!followerId) {
         return next(new AppError_1.AppError("Unauthorized", 401));
+    }
+    if (!followingId) {
+        return next(new AppError_1.AppError("Missing followingId", 400));
     }
     try {
         const result = await (0, user_service_1.toggleFollowUser)(followerId, followingId);
@@ -117,7 +121,7 @@ async function handleToggleFollowUser(req, res, next) {
     }
 }
 async function handleGetFollowers(req, res, next) {
-    const targetUserId = req.query.userId || req.user?.id || null;
+    const targetUserId = (0, params_1.getParamString)(req.query.userId) || req.user?.id || null;
     if (!targetUserId) {
         return res.status(200).json([]);
     }
@@ -126,7 +130,7 @@ async function handleGetFollowers(req, res, next) {
 }
 async function handleGetFollowing(req, res, next) {
     try {
-        const targetUserId = req.params.userId || req.user?.id || null;
+        const targetUserId = (0, params_1.getParamString)(req.params.userId) || req.user?.id || null;
         if (!targetUserId) {
             return res.status(200).json([]);
         }
@@ -181,7 +185,7 @@ async function searchFriends(req, res, next) {
     }
 }
 async function handleGetUserProfile(req, res, next) {
-    const targetUserId = req.params.id;
+    const targetUserId = (0, params_1.getParamString)(req.params.id);
     const currentUserId = req.user?.id ?? null;
     if (!targetUserId) {
         return next(new AppError_1.AppError("Invalid user ID", 400));

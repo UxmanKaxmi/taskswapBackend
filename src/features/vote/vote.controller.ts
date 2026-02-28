@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { castVoteForTask, getVotesForTask } from "./vote.service";
+import { getParamString } from "../../utils/params";
 
 // POST /tasks/:id/vote
 export async function castVote(
@@ -9,7 +10,7 @@ export async function castVote(
 ) {
   try {
     const userId = req.user?.id;
-    const taskId = req.params.id;
+    const taskId = getParamString(req.params.id);
 
     // Accept both legacy { option } and new { nextOption, prevOption }
     const { nextOption, prevOption, option } = (req.body ?? {}) as {
@@ -22,12 +23,15 @@ export async function castVote(
 
     if (!taskId) {
       res.status(400).json({ message: "Missing taskId" });
+      return;
     }
     if (!userId) {
       res.status(400).json({ message: "Missing userId" });
+      return;
     }
     if (!chosen) {
       res.status(400).json({ message: "nextOption is required" });
+      return;
     }
 
     const result = await castVoteForTask({
@@ -50,9 +54,10 @@ export async function getVotes(
   next: NextFunction
 ) {
   try {
-    const taskId = req.params.id;
+    const taskId = getParamString(req.params.id);
     if (!taskId) {
       res.status(400).json({ message: "Missing taskId" });
+      return;
     }
 
     const results = await getVotesForTask(taskId);

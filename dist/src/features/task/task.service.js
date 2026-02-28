@@ -365,13 +365,7 @@ async function getAllTasks(userId, helpers) {
     const normalizedLimit = Math.max(1, Math.min(requestedLimit, 50));
     const fetchLimit = normalizedLimit + 1;
     const cursorId = helpers?.cursor?.trim();
-    const cursorClause = cursorId
-        ? {
-            cursor: { id: cursorId },
-            skip: 1,
-        }
-        : {};
-    const tasks = await client_1.prisma.task.findMany({
+    const findArgs = {
         where: userId ? { userId: { in: taskFilterUserIds } } : {},
         include: {
             helpers: { select: { id: true, name: true, email: true, photo: true } },
@@ -393,8 +387,12 @@ async function getAllTasks(userId, helpers) {
         },
         orderBy: { createdAt: "desc" },
         take: fetchLimit,
-        ...cursorClause,
-    });
+    };
+    if (cursorId) {
+        findArgs.cursor = { id: cursorId };
+        findArgs.skip = 1;
+    }
+    const tasks = await client_1.prisma.task.findMany(findArgs);
     const hasMore = tasks.length === fetchLimit;
     const trimmed = hasMore ? tasks.slice(0, normalizedLimit) : tasks;
     const lastTask = trimmed[trimmed.length - 1];

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { getParamString } from "../../utils/params";
 import {
   createComment,
   getCommentsForTask,
@@ -10,7 +11,7 @@ import { BadRequestError } from "../../errors";
 export async function handleCreateComment(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction 
 ) {
   const userId = req.user?.id;
 
@@ -33,7 +34,10 @@ export async function handleGetComments(
 ) {
   try {
     const viewerId = req.user?.id ?? null;  // ⭐ PUBLIC-SAFE
-    const { taskId } = req.params;
+    const taskId = getParamString(req.params.taskId);
+    if (!taskId) {
+      return next(new BadRequestError("Task ID is required"));
+    }
 
     const comments = await getCommentsForTask(taskId, viewerId);
     res.status(200).json(comments);

@@ -13,6 +13,7 @@ import { User } from "@prisma/client";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
 import { getUserProfileById } from "./user.service";
+import { getParamString } from "../../utils/params";
 
 import {
   getFollowersCount,
@@ -128,14 +129,17 @@ export async function handleToggleFollowUser(
   next: NextFunction
 ) {
   const followerId = req.user?.id;
-  const followingId = req.params.userId;
+  const followingId = getParamString(req.params.userId);
 
-  if (followerId === followingId) {
+  if (followerId && followingId && followerId === followingId) {
     throw new AppError("You cannot follow yourself", 400);
   }
 
   if (!followerId) {
     return next(new AppError("Unauthorized", 401));
+  }
+  if (!followingId) {
+    return next(new AppError("Missing followingId", 400));
   }
 
   try {
@@ -152,7 +156,8 @@ export async function handleGetFollowers(
   res: Response,
   next: NextFunction
 ) {
-  const targetUserId = (req.query.userId as string) || req.user?.id || null;
+  const targetUserId =
+    getParamString(req.query.userId) || req.user?.id || null;
 
   if (!targetUserId) {
     return res.status(200).json([]);
@@ -168,7 +173,8 @@ export async function handleGetFollowing(
   next: NextFunction
 ) {
   try {
-    const targetUserId = req.params.userId || req.user?.id || null;
+    const targetUserId =
+      getParamString(req.params.userId) || req.user?.id || null;
 
     if (!targetUserId) {
       return res.status(200).json([]);
@@ -245,8 +251,8 @@ export async function handleGetUserProfile(
   res: Response,
   next: NextFunction
 ) {
-  const targetUserId = req.params.id;
-const currentUserId = req.user?.id ?? null;
+  const targetUserId = getParamString(req.params.id);
+  const currentUserId = req.user?.id ?? null;
 
   if (!targetUserId) {
     return next(new AppError("Invalid user ID", 400));

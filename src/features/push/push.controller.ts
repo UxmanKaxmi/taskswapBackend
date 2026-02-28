@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { togglePushForTask, getPushesForTask } from "./push.service";
+import { getParamString } from "../../utils/params";
 
 // POST /tasks/:id/push
 export async function togglePush(
@@ -9,7 +10,7 @@ export async function togglePush(
 ) {
   try {
     const userId = req.user?.id;
-    const taskId = req.params.id;
+    const taskId = getParamString(req.params.id);
 
     if (!taskId) {
       res.status(400).json({ message: "Missing taskId" });
@@ -39,7 +40,7 @@ export async function getPushes(
   next: NextFunction
 ) {
   try {
-    const taskId = req.params.id;
+    const taskId = getParamString(req.params.id);
 
     if (!taskId) {
       res.status(400).json({ message: "Missing taskId" });

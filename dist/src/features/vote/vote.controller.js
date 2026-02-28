@@ -4,22 +4,26 @@ exports.castVote = castVote;
 exports.getVotes = getVotes;
 exports.handleGetVote = handleGetVote;
 const vote_service_1 = require("./vote.service");
+const params_1 = require("../../utils/params");
 // POST /tasks/:id/vote
 async function castVote(req, res, next) {
     try {
         const userId = req.user?.id;
-        const taskId = req.params.id;
+        const taskId = (0, params_1.getParamString)(req.params.id);
         // Accept both legacy { option } and new { nextOption, prevOption }
         const { nextOption, prevOption, option } = (req.body ?? {});
         const chosen = (nextOption ?? option)?.trim();
         if (!taskId) {
             res.status(400).json({ message: "Missing taskId" });
+            return;
         }
         if (!userId) {
             res.status(400).json({ message: "Missing userId" });
+            return;
         }
         if (!chosen) {
             res.status(400).json({ message: "nextOption is required" });
+            return;
         }
         const result = await (0, vote_service_1.castVoteForTask)({
             userId: userId,
@@ -36,9 +40,10 @@ async function castVote(req, res, next) {
 // GET /tasks/:id/votes
 async function getVotes(req, res, next) {
     try {
-        const taskId = req.params.id;
+        const taskId = (0, params_1.getParamString)(req.params.id);
         if (!taskId) {
             res.status(400).json({ message: "Missing taskId" });
+            return;
         }
         const results = await (0, vote_service_1.getVotesForTask)(taskId);
         res.status(200).json(results);

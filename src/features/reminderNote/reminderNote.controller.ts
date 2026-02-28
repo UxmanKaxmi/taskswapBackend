@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { sendReminderNote, getRemindersByTask } from "./reminderNote.service";
 import { BadRequestError } from "../../errors";
+import { getParamString } from "../../utils/params";
 
 export async function handleSendReminderNote(
   req: Request,
@@ -9,11 +10,14 @@ export async function handleSendReminderNote(
 ): Promise<void> {
   try {
     const { message } = req.body;
-    const taskId = req.params.id;
+    const taskId = getParamString(req.params.id);
     const senderId = req.user?.id;
 
     if (!senderId) {
       return next(new BadRequestError("User ID is missing from request."));
+    }
+    if (!taskId) {
+      return next(new BadRequestError("Task ID is required."));
     }
 
     const note = await sendReminderNote({ taskId, senderId, message });
@@ -29,8 +33,12 @@ export async function handleGetRemindersByTask(
   next: NextFunction
 ) {
   try {
-    const taskId = req.params.id;
+    const taskId = getParamString(req.params.id);
     const userId = req.user?.id ?? null; // <-- ⭐ PUBLIC SUPPORT
+
+    if (!taskId) {
+      return next(new BadRequestError("Task ID is required."));
+    }
  
     const notes = await getRemindersByTask(taskId, userId);
     res.status(200).json(notes);
