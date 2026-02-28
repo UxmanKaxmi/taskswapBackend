@@ -81,7 +81,8 @@ describe("Reminder Note Feature", () => {
   it("should return hasReminded in task list", async () => {
     const res = await request(app).get("/tasks");
     expect(res.status).toBe(200);
-    const target = res.body.find((t: any) => t.id === taskId);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    const target = res.body.data.find((t: any) => t.id === taskId);
     expect(target).toBeDefined();
     expect(target.hasReminded).toBe(true);
   });

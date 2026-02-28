@@ -80,6 +80,8 @@ describe("Task Routes", () => {
     const res = await request(app).get("/tasks");
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    expect(res.body.meta).toHaveProperty("hasMore");
+    expect(res.body.meta).toHaveProperty("nextCursor");
   });
 });

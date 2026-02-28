@@ -361,11 +361,29 @@ async function getAllTasks(userId, helpers) {
         if (!helpers?.excludeSelf)
             taskFilterUserIds = [userId, ...taskFilterUserIds];
     }
+    const requestedLimit = helpers?.limit ?? 20;
+    const normalizedLimit = Math.max(1, Math.min(requestedLimit, 50));
+    const fetchLimit = normalizedLimit + 1;
+    const cursorId = helpers?.cursor?.trim();
+    const cursorClause = cursorId
+        ? {
+            cursor: { id: cursorId },
+            skip: 1,
+        }
+        : {};
     const tasks = await client_1.prisma.task.findMany({
         where: userId ? { userId: { in: taskFilterUserIds } } : {},
         include: {
             helpers: { select: { id: true, name: true, email: true, photo: true } },
-            _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
+            _count: {
+                select: {
+                    Comment: true,
+                    ReminderNote: true,
+                    Vote: true,
+                    helpers: true,
+                    Push: true,
+                },
+            },
             Push: userId
                 ? {
                     where: { userId },
@@ -374,9 +392,18 @@ async function getAllTasks(userId, helpers) {
                 : false,
         },
         orderBy: { createdAt: "desc" },
-        take: helpers?.limit,
+        take: fetchLimit,
+        ...cursorClause,
     });
-    return transformTasksForFeed(tasks, userId);
+    const hasMore = tasks.length === fetchLimit;
+    const trimmed = hasMore ? tasks.slice(0, normalizedLimit) : tasks;
+    const lastTask = trimmed[trimmed.length - 1];
+    const paginatedTasks = await transformTasksForFeed(trimmed, userId);
+    return {
+        tasks: paginatedTasks,
+        hasMore,
+        nextCursor: hasMore && lastTask ? lastTask.id : null,
+    };
 }
 async function getRecentTasksForUserProfile(targetUserId, currentUserId, limit = 5) {
     const recentTasks = await client_1.prisma.task.findMany({

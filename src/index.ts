@@ -10,6 +10,7 @@ import voteRoutes from "./features/vote/vote.routes";
 import commentRoutes from "./features/comment/comment.routes";
 import referralRoutes from "./features/referral/referral.routes";
 import pushRoutes from "./features/push/push.routes";
+import featureFlagsRoutes from "./features/featureFlags/featureFlags.routes";
 
 import { prisma } from "./db/client";
 import { errorHandler } from "./middleware/errorHandler";
@@ -39,6 +40,7 @@ app.use("/notification", notificationRoutes as Router);
 app.use("/vote", voteRoutes as Router);
 app.use("/comments", commentRoutes as Router);
 app.use("/referrals", referralRoutes as Router);
+app.use("/features", featureFlagsRoutes as Router);
 
 // Push routes, we need Task here
 app.use("/tasks", pushRoutes as Router);

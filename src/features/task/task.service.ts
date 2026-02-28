@@ -190,6 +190,14 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
   });
 }
 
+type TaskFeedResponse = Awaited<ReturnType<typeof transformTasksForFeed>>;
+
+type PaginatedTaskResult = {
+  tasks: TaskFeedResponse;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 /* -------------------------------------------------------
    CREATE TASK (auth required)
 --------------------------------------------------------- */
@@ -478,7 +486,10 @@ const pushHistory =
    GET ALL TASKS (optional auth → public feed)
 --------------------------------------------------------- */
 
-export async function getAllTasks(userId?: string | null, helpers?: GetAllTasksHelpers) {
+export async function getAllTasks(
+  userId?: string | null,
+  helpers?: GetAllTasksHelpers
+): Promise<PaginatedTaskResult> {
   /* ---------------------------------------------
      If logged in → show "following" feed
      If logged out → show ALL public posts
@@ -495,23 +506,53 @@ export async function getAllTasks(userId?: string | null, helpers?: GetAllTasksH
     if (!helpers?.excludeSelf) taskFilterUserIds = [userId, ...taskFilterUserIds];
   }
 
-const tasks = await prisma.task.findMany({
-  where: userId ? { userId: { in: taskFilterUserIds } } : {},
-  include: {
-    helpers: { select: { id: true, name: true, email: true, photo: true } },
-    _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
-    Push: userId
-      ? {
-          where: { userId },
-          select: { id: true },
-        }
-      : false,
-  },
-  orderBy: { createdAt: "desc" },
-  take: helpers?.limit,
-});
+  const requestedLimit = helpers?.limit ?? 20;
+  const normalizedLimit = Math.max(1, Math.min(requestedLimit, 50));
+  const fetchLimit = normalizedLimit + 1;
 
-  return transformTasksForFeed(tasks as FeedTask[], userId);
+  const cursorId = helpers?.cursor?.trim();
+  const cursorClause = cursorId
+    ? {
+        cursor: { id: cursorId },
+        skip: 1,
+      }
+    : {};
+
+  const tasks = await prisma.task.findMany({
+    where: userId ? { userId: { in: taskFilterUserIds } } : {},
+    include: {
+      helpers: { select: { id: true, name: true, email: true, photo: true } },
+      _count: {
+        select: {
+          Comment: true,
+          ReminderNote: true,
+          Vote: true,
+          helpers: true,
+          Push: true,
+        },
+      },
+      Push: userId
+        ? {
+            where: { userId },
+            select: { id: true },
+          }
+        : false,
+    },
+    orderBy: { createdAt: "desc" },
+    take: fetchLimit,
+    ...cursorClause,
+  });
+
+  const hasMore = tasks.length === fetchLimit;
+  const trimmed = hasMore ? tasks.slice(0, normalizedLimit) : tasks;
+  const lastTask = trimmed[trimmed.length - 1];
+  const paginatedTasks = await transformTasksForFeed(trimmed as FeedTask[], userId);
+
+  return {
+    tasks: paginatedTasks,
+    hasMore,
+    nextCursor: hasMore && lastTask ? lastTask.id : null,
+  };
 }
 
 export async function getRecentTasksForUserProfile(

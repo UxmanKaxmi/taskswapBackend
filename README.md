@@ -156,7 +156,7 @@ Run scripts with `yarn <script>`, `npm run <script>`, or `bun run <script>`.
 
 Mounted in `src/index.ts`:
 
-- `/tasks`
+- `/tasks` (supports `limit`, `cursor`, `excludeSelf`)
 - `/users`
 - `/reminderNote`
 - `/notification`

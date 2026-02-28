@@ -72,12 +72,28 @@ async function handleGetTasks(req, res, next) {
     try {
         // OPTIONAL — userId may be null
         const userId = req.user?.id ?? null;
-        const limit = req.query.limit
+        const parsedLimit = req.query.limit
             ? parseInt(req.query.limit, 10)
             : undefined;
+        const limit = typeof parsedLimit === "number" && !Number.isNaN(parsedLimit)
+            ? parsedLimit
+            : undefined;
+        const cursorQuery = typeof req.query.cursor === "string" && req.query.cursor.trim().length > 0
+            ? req.query.cursor.trim()
+            : undefined;
         const excludeSelf = req.query.excludeSelf === "true";
-        const tasks = await (0, task_service_1.getAllTasks)(userId, { limit, excludeSelf });
-        res.status(200).json(tasks);
+        const paginated = await (0, task_service_1.getAllTasks)(userId, {
+            limit,
+            cursor: cursorQuery,
+            excludeSelf,
+        });
+        res.status(200).json({
+            data: paginated.tasks,
+            meta: {
+                hasMore: paginated.hasMore,
+                nextCursor: paginated.nextCursor,
+            },
+        });
     }
     catch (error) {
         console.error("[TASK_FETCH_ERROR]", error);

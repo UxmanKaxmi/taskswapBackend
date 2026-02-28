@@ -69,4 +69,5 @@ export type Task = CreateTaskInput & {
 export type GetAllTasksHelpers = {
   excludeSelf?: boolean; // If true, don't include user's own tasks
   limit?: number; // Limit number of tasks returned
+  cursor?: string; // Cursor pointing to the last-seen task
 };
