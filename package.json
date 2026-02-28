@@ -35,7 +35,6 @@
     "db-start": "psql -h localhost -p 5432 -U postgres"
   },
   "devDependencies": {
-    "@types/axios": "^0.14.4",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/jest": "^29.5.14",
