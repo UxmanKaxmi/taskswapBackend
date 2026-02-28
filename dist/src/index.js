@@ -19,7 +19,7 @@ const featureFlags_routes_1 = __importDefault(require("./features/featureFlags/f
 const client_1 = require("./db/client");
 const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
-const PORT = 3001;
+const PORT = Number(process.env.PORT) || 3001;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 // Health-check endpoint for uptime monitoring

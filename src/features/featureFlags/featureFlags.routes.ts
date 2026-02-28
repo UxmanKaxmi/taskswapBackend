@@ -4,7 +4,7 @@ import {
   handleGetFeatureFlags,
   handleUpdateFeatureFlags,
 } from "./featureFlags.controller";
-import { optionalAuth } from "@middleware/optionalAuth";
+import { optionalAuth } from "../../middleware/optionalAuth";
 
 const router = express.Router();
 
