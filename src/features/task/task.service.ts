@@ -492,19 +492,11 @@ export async function getAllTasks(
   helpers?: GetAllTasksHelpers
 ): Promise<PaginatedTaskResult> {
   /* ---------------------------------------------
-     If logged in → show "following" feed
-     If logged out → show ALL public posts
+     Always show public feed (optional excludeSelf)
   ----------------------------------------------- */
-  let taskFilterUserIds: string[] | undefined;
-
-  if (userId) {
-    const followings = await prisma.follow.findMany({
-      where: { followerId: userId },
-      select: { followingId: true },
-    });
-
-    taskFilterUserIds = followings.map((f) => f.followingId);
-    if (!helpers?.excludeSelf) taskFilterUserIds = [userId, ...taskFilterUserIds];
+  let where: Prisma.TaskWhereInput = {};
+  if (helpers?.excludeSelf && userId) {
+    where = { userId: { not: userId } };
   }
 
   const requestedLimit = helpers?.limit ?? 20;
@@ -513,7 +505,7 @@ export async function getAllTasks(
 
   const cursorId = helpers?.cursor?.trim();
   const findArgs: Prisma.TaskFindManyArgs = {
-    where: userId ? { userId: { in: taskFilterUserIds } } : {},
+    where,
     include: {
       helpers: { select: { id: true, name: true, email: true, photo: true } },
       _count: {
