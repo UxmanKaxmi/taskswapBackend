@@ -9,6 +9,7 @@ var HttpStatus;
     HttpStatus[HttpStatus["BAD_REQUEST"] = 400] = "BAD_REQUEST";
     HttpStatus[HttpStatus["UNAUTHORIZED"] = 401] = "UNAUTHORIZED";
     HttpStatus[HttpStatus["FORBIDDEN"] = 403] = "FORBIDDEN";
+    HttpStatus[HttpStatus["TOO_MANY_REQUESTS"] = 429] = "TOO_MANY_REQUESTS";
     HttpStatus[HttpStatus["NOT_FOUND"] = 404] = "NOT_FOUND";
     HttpStatus[HttpStatus["CONFLICT"] = 409] = "CONFLICT";
     HttpStatus[HttpStatus["UNPROCESSABLE_ENTITY"] = 422] = "UNPROCESSABLE_ENTITY";

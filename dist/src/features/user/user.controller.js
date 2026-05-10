@@ -9,6 +9,7 @@ exports.handleToggleFollowUser = handleToggleFollowUser;
 exports.handleGetFollowers = handleGetFollowers;
 exports.handleGetFollowing = handleGetFollowing;
 exports.handleGetMe = handleGetMe;
+exports.handleGetHomeSummary = handleGetHomeSummary;
 exports.searchFriends = searchFriends;
 exports.handleGetUserProfile = handleGetUserProfile;
 const user_service_1 = require("./user.service");
@@ -164,6 +165,27 @@ async function handleGetMe(req, res, next) {
     }
     catch (err) {
         next(new AppError_1.AppError("Failed to fetch user profile", 500));
+    }
+}
+async function handleGetHomeSummary(req, res, next) {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            res.status(200).json({
+                modules: {
+                    successStory: null,
+                    needsYourPush: null,
+                    updateProgress: null,
+                    adviceRequestWaitingOnYou: null,
+                },
+            });
+            return;
+        }
+        const summary = await (0, user_service_3.getHomeSummaryForUser)(userId);
+        res.status(200).json(summary);
+    }
+    catch (err) {
+        next(err instanceof AppError_1.AppError ? err : new AppError_1.AppError("Failed to fetch home summary", 500));
     }
 }
 async function searchFriends(req, res, next) {

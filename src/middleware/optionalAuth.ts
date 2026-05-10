@@ -28,7 +28,12 @@ export const optionalAuth = (
 
     req.user = { id: decoded.userId };
   } catch (err) {
-    console.error("[OPTIONAL AUTH ERROR]", err);
+    if (err instanceof jwt.TokenExpiredError || err instanceof jwt.JsonWebTokenError) {
+      req.user = undefined;
+      return next();
+    }
+
+    console.warn("[OPTIONAL AUTH ERROR]", err instanceof Error ? err.message : err);
 
     // ------------------------------------------
     // 3) Invalid token → still allow the request

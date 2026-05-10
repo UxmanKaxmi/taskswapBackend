@@ -7,6 +7,7 @@ exports.handleGetTaskById = handleGetTaskById;
 exports.handleDeleteTask = handleDeleteTask;
 exports.handleMarkTaskAsDone = handleMarkTaskAsDone;
 exports.handleMarkTaskNotDone = handleMarkTaskNotDone;
+exports.handleShareTaskProgress = handleShareTaskProgress;
 exports.handleGetTaskViewCount = handleGetTaskViewCount;
 exports.handleIncreaseTaskViewCount = handleIncreaseTaskViewCount;
 const task_service_1 = require("./task.service");
@@ -191,6 +192,36 @@ async function handleMarkTaskNotDone(req, res, next) {
     }
     catch (error) {
         console.error("[TASK_NOT_DONE_ERROR]", error);
+        next(error);
+    }
+}
+/* -------------------------------------------------------
+   SHARE PROGRESS UPDATE (AUTH REQUIRED)
+---------------------------------------------------------*/
+async function handleShareTaskProgress(req, res, next) {
+    const taskId = (0, params_1.getParamString)(req.params.id);
+    const userId = req.user?.id;
+    if (!userId) {
+        return next(new errors_1.BadRequestError("User ID is required"));
+    }
+    if (!taskId) {
+        return next(new errors_1.BadRequestError("Task ID is required"));
+    }
+    try {
+        const parsed = task_schema_1.taskProgressUpdateSchema.parse(req.body);
+        const progressUpdate = await (0, task_service_1.shareTaskProgress)(taskId, userId, parsed.text);
+        res.status(201).json({
+            progressUpdates: [progressUpdate],
+        });
+    }
+    catch (error) {
+        console.error("[TASK_PROGRESS_UPDATE_ERROR]", error);
+        if (error instanceof zod_1.ZodError) {
+            res.status(400).json({
+                error: "Validation error",
+                issues: error.errors,
+            });
+        }
         next(error);
     }
 }

@@ -18,6 +18,7 @@ import { getParamString } from "../../utils/params";
 import {
   getFollowersCount,
   getFollowingCount,
+  getHomeSummaryForUser,
   getTaskStatsForUser,
 } from "./user.service";
 
@@ -214,6 +215,32 @@ export async function handleGetMe(
     });
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
+  }
+}
+
+export async function handleGetHomeSummary(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(200).json({
+        modules: {
+          successStory: null,
+          needsYourPush: null,
+          updateProgress: null,
+          adviceRequestWaitingOnYou: null,
+        },
+      });
+      return;
+    }
+
+    const summary = await getHomeSummaryForUser(userId);
+    res.status(200).json(summary);
+  } catch (err) {
+    next(err instanceof AppError ? err : new AppError("Failed to fetch home summary", 500));
   }
 }
 

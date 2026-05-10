@@ -1,8 +1,321 @@
-import { User } from "@prisma/client";
 import { prisma } from "../../db/client";
 import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
 import { getRecentTasksForUserProfile } from "../task/task.service";
+import { HomeModules } from "./user.types";
+
+type ModuleTask = {
+  id: string;
+  text: string;
+  type: "reminder" | "advice" | "decision" | "motivation";
+  userId: string;
+  name: string;
+  avatar: string;
+  createdAt: Date;
+  completedAt: Date | null;
+  Push?: {
+    createdAt: Date;
+    userId: string;
+  }[];
+  helpers?: {
+    id: string;
+    name: string;
+    photo: string | null;
+  }[];
+};
+
+function toPhoto(photo: string | null | undefined) {
+  return photo && photo.trim() ? photo : null;
+}
+
+function buildEntity(task: ModuleTask) {
+  return {
+    type: "task" as const,
+    taskId: task.id,
+    taskType: task.type,
+    taskText: task.text,
+    ownerId: task.userId,
+    ownerName: task.name,
+    ownerPhoto: toPhoto(task.avatar),
+  };
+}
+
+function buildSuccessStoryModule(
+  task: ModuleTask,
+  contributedAt: Date,
+  resultAt: Date
+) {
+  return {
+    id: `success_story:${task.id}`,
+    type: "success_story" as const,
+    title: "Success story",
+    body: `${task.name} finished this goal after your push.`,
+    ctaLabel: "View update",
+    entity: buildEntity(task),
+    timestamps: {
+      contributedAt: contributedAt.toISOString(),
+      resultAt: resultAt.toISOString(),
+    },
+  };
+}
+
+function buildNeedsYourPushModule(task: ModuleTask) {
+  return {
+    id: `needs_your_push:${task.id}`,
+    type: "needs_your_push" as const,
+    title: "Needs your push",
+    body: `${task.name} needs a push right now.`,
+    ctaLabel: "Send push",
+    entity: buildEntity(task),
+    stats: {
+      pushCount: (task.Push ?? []).length,
+    },
+  };
+}
+
+function buildUpdateProgressModule(
+  task: ModuleTask,
+  pushCount: number,
+  lastPushAt: Date | null
+) {
+  return {
+    id: `update_progress:${task.id}`,
+    type: "update_progress" as const,
+    title: "Update your progress",
+    body: `${pushCount} friend${pushCount === 1 ? "" : "s"} pushed you.`,
+    ctaLabel: "Update progress",
+    entity: buildEntity(task),
+    stats: {
+      pushCount,
+      lastPushAt: lastPushAt ? lastPushAt.toISOString() : null,
+    },
+  };
+}
+
+function buildAdviceRequestModule(
+  task: ModuleTask,
+  helperCount: number,
+  lastHelperAt: Date | null
+) {
+  return {
+    id: `advice_request:${task.id}`,
+    type: "advice_request_waiting_on_you" as const,
+    title: "Advice request waiting on you",
+    body: `${task.name} needs your advice.`,
+    ctaLabel: "Give advice",
+    entity: buildEntity(task),
+    stats: {
+      helperCount,
+      lastHelperAt: lastHelperAt ? lastHelperAt.toISOString() : null,
+    },
+    question: task.text,
+  };
+}
+
+export async function getHomeSummaryForUser(userId: string): Promise<{
+  modules: HomeModules;
+}> {
+  const [user, followingRows] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    }),
+    prisma.follow.findMany({
+      where: { followerId: userId },
+      select: { followingId: true },
+    }),
+  ]);
+
+  if (!user) {
+    throw new AppError("User not found", HttpStatus.NOT_FOUND);
+  }
+
+  const followedUserIds = followingRows.map((row) => row.followingId);
+
+  const [successStoryTasks, followedMotivationTasks, ownMotivationTasks, adviceTasks] =
+    await Promise.all([
+      prisma.task.findMany({
+        where: {
+          type: "motivation",
+          completed: true,
+          completedAt: { not: null },
+          userId: { not: userId },
+          Push: {
+            some: { userId },
+          },
+        },
+        orderBy: { completedAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          text: true,
+          type: true,
+          userId: true,
+          name: true,
+          avatar: true,
+          createdAt: true,
+          completedAt: true,
+          Push: {
+            where: { userId },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { createdAt: true, userId: true },
+          },
+        },
+      }),
+      followedUserIds.length
+        ? prisma.task.findMany({
+            where: {
+              type: "motivation",
+              completed: false,
+              userId: { in: followedUserIds },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 25,
+            select: {
+              id: true,
+              text: true,
+              type: true,
+              userId: true,
+              name: true,
+              avatar: true,
+              createdAt: true,
+              completedAt: true,
+              Push: {
+                where: { userId },
+                select: { createdAt: true, userId: true },
+              },
+            },
+          })
+        : Promise.resolve([] as ModuleTask[]),
+      prisma.task.findMany({
+        where: {
+          type: "motivation",
+          completed: false,
+          userId,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          text: true,
+          type: true,
+          userId: true,
+          name: true,
+          avatar: true,
+          createdAt: true,
+          completedAt: true,
+          Push: {
+            orderBy: { createdAt: "desc" },
+            select: { createdAt: true, userId: true },
+          },
+        },
+      }),
+      prisma.task.findMany({
+        where: {
+          type: "advice",
+          completed: false,
+          helpers: {
+            some: { id: userId },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 25,
+        select: {
+          id: true,
+          text: true,
+          type: true,
+          userId: true,
+          name: true,
+          avatar: true,
+          createdAt: true,
+          completedAt: true,
+          helpers: {
+            select: {
+              id: true,
+              name: true,
+              photo: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+  const successStoryTask = successStoryTasks.find((task) => {
+    const pushedAt = task.Push?.[0]?.createdAt;
+    return !!task.completedAt && !!pushedAt && pushedAt <= task.completedAt;
+  });
+
+  const needsYourPushTask = followedMotivationTasks.find((task) => (task.Push ?? []).length === 0);
+
+  const updateProgressTask = ownMotivationTasks
+    .map((task) => {
+      const otherPushes = (task.Push ?? []).filter((push) => push.userId !== userId);
+      return {
+        task,
+        otherPushes,
+        pushCount: otherPushes.length,
+        lastPushAt: otherPushes[0]?.createdAt ?? null,
+      };
+    })
+    .filter((item) => item.pushCount > 0)
+    .sort((a, b) => {
+      if (b.pushCount !== a.pushCount) return b.pushCount - a.pushCount;
+      return (b.lastPushAt?.getTime() ?? 0) - (a.lastPushAt?.getTime() ?? 0);
+    })[0];
+
+  const advisedComments = adviceTasks.length
+    ? await prisma.comment.findMany({
+        where: {
+          userId,
+          taskId: {
+            in: adviceTasks.map((task) => task.id),
+          },
+        },
+        select: { taskId: true },
+      })
+    : [];
+
+  const advisedTaskIds = new Set(advisedComments.map((comment) => comment.taskId));
+
+  const adviceRequestTask = adviceTasks
+    .filter((task) => !advisedTaskIds.has(task.id))
+    .map((task) => ({
+      task,
+      helperCount: task.helpers?.length ?? 0,
+      lastHelperAt: task.createdAt,
+    }))[0];
+
+  const successStoryPush = successStoryTask?.Push?.[0] ?? null;
+
+  return {
+    modules: {
+      successStory:
+        successStoryTask && successStoryTask.completedAt && successStoryPush
+          ? buildSuccessStoryModule(
+              successStoryTask,
+              successStoryPush.createdAt,
+              successStoryTask.completedAt
+            )
+          : null,
+      needsYourPush: needsYourPushTask ? buildNeedsYourPushModule(needsYourPushTask) : null,
+      updateProgress: updateProgressTask
+        ? buildUpdateProgressModule(
+            updateProgressTask.task,
+            updateProgressTask.pushCount,
+            updateProgressTask.lastPushAt
+          )
+        : null,
+      adviceRequestWaitingOnYou: adviceRequestTask
+        ? buildAdviceRequestModule(
+            adviceRequestTask.task,
+            adviceRequestTask.helperCount,
+            adviceRequestTask.lastHelperAt
+          )
+        : null,
+    },
+  };
+}
 
 export async function syncUserToDB({
   id,

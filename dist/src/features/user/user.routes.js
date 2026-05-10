@@ -16,6 +16,7 @@ router.get("/toggleFollow/:userId", requireAuth_1.requireAuth, user_controller_1
 router.get("/followers", optionalAuth_1.optionalAuth, user_controller_1.handleGetFollowers);
 router.get("/following", optionalAuth_1.optionalAuth, user_controller_1.handleGetFollowing);
 // Profile of currently logged-in user
+router.get("/me/home-summary", optionalAuth_1.optionalAuth, user_controller_1.handleGetHomeSummary);
 router.get("/me", requireAuth_1.requireAuth, user_controller_1.handleGetMe);
 // Search friends (still requires auth)
 router.get("/search-friends", requireAuth_1.requireAuth, user_controller_1.searchFriends);

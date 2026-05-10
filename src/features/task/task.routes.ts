@@ -9,6 +9,7 @@ import {
   handleGetTaskById,
   handleGetTaskViewCount,
   handleIncreaseTaskViewCount,
+  handleShareTaskProgress,
 } from "./task.controller";
 import { requireAuth } from "../../middleware/requireAuth";
 import { optionalAuth } from "../../middleware/optionalAuth"; // FIXED path
@@ -41,6 +42,7 @@ router.delete("/:id", requireAuth, handleDeleteTask);
 // ---------------------------
 router.patch("/:id/complete", requireAuth, handleMarkTaskAsDone);
 router.patch("/:id/incomplete", requireAuth, handleMarkTaskNotDone);
+router.post("/:id/progress", requireAuth, handleShareTaskProgress);
 
 
 // ---------------------------

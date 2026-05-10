@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHomeSummaryForUser = getHomeSummaryForUser;
 exports.syncUserToDB = syncUserToDB;
 exports.getMutualFriends = getMutualFriends;
 exports.matchUsersByEmail = matchUsersByEmail;
@@ -16,6 +17,254 @@ const client_1 = require("../../db/client");
 const AppError_1 = require("../../errors/AppError");
 const httpStatus_1 = require("../../types/httpStatus");
 const task_service_1 = require("../task/task.service");
+function toPhoto(photo) {
+    return photo && photo.trim() ? photo : null;
+}
+function buildEntity(task) {
+    return {
+        type: "task",
+        taskId: task.id,
+        taskType: task.type,
+        taskText: task.text,
+        ownerId: task.userId,
+        ownerName: task.name,
+        ownerPhoto: toPhoto(task.avatar),
+    };
+}
+function buildSuccessStoryModule(task, contributedAt, resultAt) {
+    return {
+        id: `success_story:${task.id}`,
+        type: "success_story",
+        title: "Success story",
+        body: `${task.name} finished this goal after your push.`,
+        ctaLabel: "View update",
+        entity: buildEntity(task),
+        timestamps: {
+            contributedAt: contributedAt.toISOString(),
+            resultAt: resultAt.toISOString(),
+        },
+    };
+}
+function buildNeedsYourPushModule(task) {
+    return {
+        id: `needs_your_push:${task.id}`,
+        type: "needs_your_push",
+        title: "Needs your push",
+        body: `${task.name} needs a push right now.`,
+        ctaLabel: "Send push",
+        entity: buildEntity(task),
+        stats: {
+            pushCount: (task.Push ?? []).length,
+        },
+    };
+}
+function buildUpdateProgressModule(task, pushCount, lastPushAt) {
+    return {
+        id: `update_progress:${task.id}`,
+        type: "update_progress",
+        title: "Update your progress",
+        body: `${pushCount} friend${pushCount === 1 ? "" : "s"} pushed you.`,
+        ctaLabel: "Update progress",
+        entity: buildEntity(task),
+        stats: {
+            pushCount,
+            lastPushAt: lastPushAt ? lastPushAt.toISOString() : null,
+        },
+    };
+}
+function buildAdviceRequestModule(task, helperCount, lastHelperAt) {
+    return {
+        id: `advice_request:${task.id}`,
+        type: "advice_request_waiting_on_you",
+        title: "Advice request waiting on you",
+        body: `${task.name} needs your advice.`,
+        ctaLabel: "Give advice",
+        entity: buildEntity(task),
+        stats: {
+            helperCount,
+            lastHelperAt: lastHelperAt ? lastHelperAt.toISOString() : null,
+        },
+        question: task.text,
+    };
+}
+async function getHomeSummaryForUser(userId) {
+    const [user, followingRows] = await Promise.all([
+        client_1.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
+        }),
+        client_1.prisma.follow.findMany({
+            where: { followerId: userId },
+            select: { followingId: true },
+        }),
+    ]);
+    if (!user) {
+        throw new AppError_1.AppError("User not found", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    const followedUserIds = followingRows.map((row) => row.followingId);
+    const [successStoryTasks, followedMotivationTasks, ownMotivationTasks, adviceTasks] = await Promise.all([
+        client_1.prisma.task.findMany({
+            where: {
+                type: "motivation",
+                completed: true,
+                completedAt: { not: null },
+                userId: { not: userId },
+                Push: {
+                    some: { userId },
+                },
+            },
+            orderBy: { completedAt: "desc" },
+            take: 25,
+            select: {
+                id: true,
+                text: true,
+                type: true,
+                userId: true,
+                name: true,
+                avatar: true,
+                createdAt: true,
+                completedAt: true,
+                Push: {
+                    where: { userId },
+                    orderBy: { createdAt: "desc" },
+                    take: 1,
+                    select: { createdAt: true, userId: true },
+                },
+            },
+        }),
+        followedUserIds.length
+            ? client_1.prisma.task.findMany({
+                where: {
+                    type: "motivation",
+                    completed: false,
+                    userId: { in: followedUserIds },
+                },
+                orderBy: { createdAt: "desc" },
+                take: 25,
+                select: {
+                    id: true,
+                    text: true,
+                    type: true,
+                    userId: true,
+                    name: true,
+                    avatar: true,
+                    createdAt: true,
+                    completedAt: true,
+                    Push: {
+                        where: { userId },
+                        select: { createdAt: true, userId: true },
+                    },
+                },
+            })
+            : Promise.resolve([]),
+        client_1.prisma.task.findMany({
+            where: {
+                type: "motivation",
+                completed: false,
+                userId,
+            },
+            orderBy: { createdAt: "desc" },
+            take: 25,
+            select: {
+                id: true,
+                text: true,
+                type: true,
+                userId: true,
+                name: true,
+                avatar: true,
+                createdAt: true,
+                completedAt: true,
+                Push: {
+                    orderBy: { createdAt: "desc" },
+                    select: { createdAt: true, userId: true },
+                },
+            },
+        }),
+        client_1.prisma.task.findMany({
+            where: {
+                type: "advice",
+                completed: false,
+                helpers: {
+                    some: { id: userId },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 25,
+            select: {
+                id: true,
+                text: true,
+                type: true,
+                userId: true,
+                name: true,
+                avatar: true,
+                createdAt: true,
+                completedAt: true,
+                helpers: {
+                    select: {
+                        id: true,
+                        name: true,
+                        photo: true,
+                    },
+                },
+            },
+        }),
+    ]);
+    const successStoryTask = successStoryTasks.find((task) => {
+        const pushedAt = task.Push?.[0]?.createdAt;
+        return !!task.completedAt && !!pushedAt && pushedAt <= task.completedAt;
+    });
+    const needsYourPushTask = followedMotivationTasks.find((task) => (task.Push ?? []).length === 0);
+    const updateProgressTask = ownMotivationTasks
+        .map((task) => {
+        const otherPushes = (task.Push ?? []).filter((push) => push.userId !== userId);
+        return {
+            task,
+            otherPushes,
+            pushCount: otherPushes.length,
+            lastPushAt: otherPushes[0]?.createdAt ?? null,
+        };
+    })
+        .filter((item) => item.pushCount > 0)
+        .sort((a, b) => {
+        if (b.pushCount !== a.pushCount)
+            return b.pushCount - a.pushCount;
+        return (b.lastPushAt?.getTime() ?? 0) - (a.lastPushAt?.getTime() ?? 0);
+    })[0];
+    const advisedComments = adviceTasks.length
+        ? await client_1.prisma.comment.findMany({
+            where: {
+                userId,
+                taskId: {
+                    in: adviceTasks.map((task) => task.id),
+                },
+            },
+            select: { taskId: true },
+        })
+        : [];
+    const advisedTaskIds = new Set(advisedComments.map((comment) => comment.taskId));
+    const adviceRequestTask = adviceTasks
+        .filter((task) => !advisedTaskIds.has(task.id))
+        .map((task) => ({
+        task,
+        helperCount: task.helpers?.length ?? 0,
+        lastHelperAt: task.createdAt,
+    }))[0];
+    const successStoryPush = successStoryTask?.Push?.[0] ?? null;
+    return {
+        modules: {
+            successStory: successStoryTask && successStoryTask.completedAt && successStoryPush
+                ? buildSuccessStoryModule(successStoryTask, successStoryPush.createdAt, successStoryTask.completedAt)
+                : null,
+            needsYourPush: needsYourPushTask ? buildNeedsYourPushModule(needsYourPushTask) : null,
+            updateProgress: updateProgressTask
+                ? buildUpdateProgressModule(updateProgressTask.task, updateProgressTask.pushCount, updateProgressTask.lastPushAt)
+                : null,
+            adviceRequestWaitingOnYou: adviceRequestTask
+                ? buildAdviceRequestModule(adviceRequestTask.task, adviceRequestTask.helperCount, adviceRequestTask.lastHelperAt)
+                : null,
+        },
+    };
+}
 async function syncUserToDB({ id, email, name, photo, fcmToken, }) {
     return client_1.prisma.user.upsert({
         where: { id },

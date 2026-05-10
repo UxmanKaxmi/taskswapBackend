@@ -142,9 +142,23 @@ async function main() {
       .map((email) => userByEmail.get(email)?.id)
       .filter((id): id is string => Boolean(id));
 
+    const completedAt = task.completed ? inHours(-2) : null;
+    const helperRelation =
+      helperIds.length > 0
+        ? { set: helperIds.map((id) => ({ id })) }
+        : { set: [] };
+
     const record = await prisma.task.upsert({
       where: { text_userId: { text: task.text, userId: owner.id } },
-      update: {},
+      update: {
+        type: task.type,
+        remindAt: task.remindAt ?? null,
+        deliverAt: task.deliverAt ?? null,
+        options: task.options ?? [],
+        completed: task.completed ?? false,
+        completedAt,
+        helpers: helperRelation,
+      },
       create: {
         text: task.text,
         type: task.type,
@@ -153,7 +167,7 @@ async function main() {
         deliverAt: task.deliverAt ?? null,
         options: task.options ?? [],
         completed: task.completed ?? false,
-        completedAt: task.completed ? inHours(-2) : null,
+        completedAt,
         helpers: helperIds.length
           ? { connect: helperIds.map((id) => ({ id })) }
           : undefined,

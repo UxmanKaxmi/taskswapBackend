@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTask = createTask;
 exports.updateTask = updateTask;
+exports.shareTaskProgress = shareTaskProgress;
 exports.getTaskById = getTaskById;
 exports.getAllTasks = getAllTasks;
 exports.getRecentTasksForUserProfile = getRecentTasksForUserProfile;
@@ -15,6 +16,7 @@ const client_1 = require("../../db/client");
 const httpStatus_1 = require("../../types/httpStatus");
 const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const notification_service_1 = require("../notification/notification.service");
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 /* -------------------------------------------------------
    INTERNAL UTILS
 --------------------------------------------------------- */
@@ -27,6 +29,14 @@ function validateDecisionOptions(options) {
     if (unique.size !== normalized.length) {
         throw new AppError_1.AppError("Decision options must be unique.", httpStatus_1.HttpStatus.BAD_REQUEST);
     }
+}
+function toProgressUpdateSummary(progressUpdate) {
+    if (!progressUpdate)
+        return null;
+    return {
+        text: progressUpdate.text,
+        createdAt: progressUpdate.createdAt.toISOString(),
+    };
 }
 async function checkDuplicateTask(text, userId, excludeId) {
     return client_1.prisma.task.findFirst({
@@ -94,7 +104,7 @@ async function transformTasksForFeed(tasks, userId) {
         });
     }
     return tasks.map((task) => {
-        const { _count, ...cleanTask } = task;
+        const { _count, Push, ...cleanTask } = task;
         const taskVotes = voteMap[task.id] || {};
         const transformedVotes = Object.fromEntries(Object.entries(taskVotes).map(([opt, v]) => [
             opt,
@@ -107,7 +117,7 @@ async function transformTasksForFeed(tasks, userId) {
             voteCount: task._count.Vote,
             helpersCount: task._count.helpers,
             pushCount: task.type === "motivation" ? task._count.Push : 0,
-            hasPushed: viewerId && task.type === "motivation" ? (task.Push?.length ?? 0) > 0 : false,
+            hasPushed: viewerId && task.type === "motivation" ? (Push?.length ?? 0) > 0 : false,
             hasAdvised: viewerId && task.type === "advice" ? advisedTaskIds.has(task.id) : false,
             hasReminded: viewerId ? remindedTaskIds.has(task.id) : false,
             votes: transformedVotes,
@@ -237,6 +247,76 @@ async function updateTask(id, data) {
     });
 }
 /* -------------------------------------------------------
+   SHARE PROGRESS UPDATE
+--------------------------------------------------------- */
+async function shareTaskProgress(taskId, senderId, text) {
+    const task = await client_1.prisma.task.findUnique({
+        where: { id: taskId },
+        select: {
+            id: true,
+            userId: true,
+            type: true,
+            text: true,
+            name: true,
+            Push: {
+                select: { userId: true },
+            },
+            helpers: {
+                select: { id: true },
+            },
+            progressUpdates: {
+                orderBy: { createdAt: "desc" },
+                take: 1,
+                select: {
+                    createdAt: true,
+                },
+            },
+        },
+    });
+    if (!task) {
+        throw new AppError_1.AppError("Task not found.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    if (task.type !== "motivation") {
+        throw new AppError_1.AppError("Progress updates are only available for motivation tasks.", httpStatus_1.HttpStatus.BAD_REQUEST);
+    }
+    if (task.userId !== senderId) {
+        throw new AppError_1.AppError("You can only share progress on your own task.", httpStatus_1.HttpStatus.FORBIDDEN);
+    }
+    const latestProgressUpdate = task.progressUpdates[0];
+    if (latestProgressUpdate) {
+        const elapsedMs = Date.now() - latestProgressUpdate.createdAt.getTime();
+        if (elapsedMs < SIX_HOURS_MS) {
+            const remainingHours = Math.ceil((SIX_HOURS_MS - elapsedMs) / (60 * 60 * 1000));
+            throw new AppError_1.AppError(`You can only share a progress update every 6 hours. Try again in about ${remainingHours} hour${remainingHours === 1 ? "" : "s"}.`, httpStatus_1.HttpStatus.TOO_MANY_REQUESTS);
+        }
+    }
+    const senderName = task.name.trim() || "Someone";
+    const recipientIds = [
+        ...new Set([...task.Push.map((push) => push.userId), ...task.helpers.map((helper) => helper.id)]),
+    ].filter((recipientId) => recipientId !== senderId);
+    const progressUpdate = await client_1.prisma.$transaction(async (tx) => {
+        const created = await tx.progressUpdate.create({
+            data: {
+                taskId,
+                senderId,
+                text,
+            },
+        });
+        return created;
+    });
+    await (0, notification_service_1.createTaskProgressUpdateNotifications)({
+        recipientIds,
+        senderId,
+        taskId,
+        progressUpdateId: progressUpdate.id,
+        taskText: task.text,
+        progressText: text,
+        taskType: task.type,
+        senderName,
+    });
+    return toProgressUpdateSummary(progressUpdate);
+}
+/* -------------------------------------------------------
    GET SINGLE TASK (optional auth)
 --------------------------------------------------------- */
 async function getTaskById(taskId, userId) {
@@ -254,6 +334,13 @@ async function getTaskById(taskId, userId) {
         where: { id: taskId },
         include: {
             helpers: { select: { id: true, name: true, photo: true } },
+            progressUpdates: {
+                orderBy: { createdAt: "desc" },
+                select: {
+                    text: true,
+                    createdAt: true,
+                },
+            },
             Vote: {
                 include: {
                     user: { select: { id: true, name: true, photo: true } },
@@ -295,7 +382,10 @@ async function getTaskById(taskId, userId) {
         ? task.Vote.find((v) => v.userId === userId)?.option ?? null
         : null;
     const hasVoted = userId ? votedOption !== null : false;
-    const { Vote, ...taskData } = task;
+    const { Vote, progressUpdates, Push, ...taskData } = task;
+    const progressUpdateHistory = progressUpdates
+        .map((entry) => toProgressUpdateSummary(entry))
+        .filter((entry) => entry !== null);
     // ---------------------------------
     // Include viewCount in response
     // ---------------------------------
@@ -321,9 +411,7 @@ async function getTaskById(taskId, userId) {
         });
         hasReminded = !!reminder;
     }
-    const pushItems = Array.isArray(task.Push)
-        ? task.Push
-        : [];
+    const pushItems = (Array.isArray(Push) ? Push : []);
     const pushHistory = task.type === "motivation"
         ? pushItems.map((p) => ({
             user: p.user,
@@ -341,6 +429,7 @@ async function getTaskById(taskId, userId) {
         pushHistory, // 👈 ADD THIS
         hasAdvised,
         hasReminded,
+        progressUpdates: progressUpdateHistory,
     };
 }
 /* -------------------------------------------------------
@@ -348,25 +437,18 @@ async function getTaskById(taskId, userId) {
 --------------------------------------------------------- */
 async function getAllTasks(userId, helpers) {
     /* ---------------------------------------------
-       If logged in → show "following" feed
-       If logged out → show ALL public posts
+       Always show public feed (optional excludeSelf)
     ----------------------------------------------- */
-    let taskFilterUserIds;
-    if (userId) {
-        const followings = await client_1.prisma.follow.findMany({
-            where: { followerId: userId },
-            select: { followingId: true },
-        });
-        taskFilterUserIds = followings.map((f) => f.followingId);
-        if (!helpers?.excludeSelf)
-            taskFilterUserIds = [userId, ...taskFilterUserIds];
+    let where = {};
+    if (helpers?.excludeSelf && userId) {
+        where = { userId: { not: userId } };
     }
     const requestedLimit = helpers?.limit ?? 20;
     const normalizedLimit = Math.max(1, Math.min(requestedLimit, 50));
     const fetchLimit = normalizedLimit + 1;
     const cursorId = helpers?.cursor?.trim();
     const findArgs = {
-        where: userId ? { userId: { in: taskFilterUserIds } } : {},
+        where,
         include: {
             helpers: { select: { id: true, name: true, email: true, photo: true } },
             _count: {

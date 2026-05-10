@@ -27,6 +27,7 @@ router.delete("/:id", requireAuth_1.requireAuth, task_controller_1.handleDeleteT
 // ---------------------------
 router.patch("/:id/complete", requireAuth_1.requireAuth, task_controller_1.handleMarkTaskAsDone);
 router.patch("/:id/incomplete", requireAuth_1.requireAuth, task_controller_1.handleMarkTaskNotDone);
+router.post("/:id/progress", requireAuth_1.requireAuth, task_controller_1.handleShareTaskProgress);
 // ---------------------------
 // get TASK VIEW COUNT (public)
 // ---------------------------

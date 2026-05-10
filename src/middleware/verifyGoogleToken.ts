@@ -3,6 +3,18 @@ import { Request, Response, NextFunction } from "express";
 
 const client = new OAuth2Client();
 
+const getJwtHeader = (token: string): { alg?: string } | null => {
+  const header = token.split(".")[0];
+
+  if (!header) return null;
+
+  try {
+    return JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+};
+
 export const verifyGoogleToken = async (
   req: Request,
   res: Response,
@@ -16,6 +28,14 @@ export const verifyGoogleToken = async (
   }
 
   const idToken = authHeader.split(" ")[1];
+
+  const jwtHeader = getJwtHeader(idToken);
+  if (jwtHeader?.alg === "HS256") {
+    res.status(401).json({
+      error: "Expected Google ID token, received app JWT",
+    });
+    return;
+  }
 
   try {
     const ticket = await client.verifyIdToken({

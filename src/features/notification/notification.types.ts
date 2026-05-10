@@ -14,6 +14,7 @@ export const NOTIFICATION_TYPES = {
   taskHelper: "taskHelper",
   decisionDone: "decisionDone",
   commentMention: "commentMention",
+  taskProgressUpdate: "taskProgressUpdate",
 } as const;
 
 export type NotificationType =
@@ -45,6 +46,9 @@ export interface MetadataByType {
   taskHelper: TaskHelperMeta;
   decisionDone: DecisionDoneMeta;
   commentMention: CommentMentionMeta;
+  taskProgressUpdate: TaskRefMeta & {
+    progressText?: string;
+  };
 }
 
 // 3) Sender shown alongside notifications

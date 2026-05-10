@@ -8,11 +8,16 @@ import {
   increaseTaskViewCount,
   markTaskAsDone,
   markTaskAsNotDone,
+  shareTaskProgress,
   updateTask,
 } from "./task.service";
 import { BadRequestError } from "../../errors";
 import { CreateTaskInput } from "./task.types";
-import { taskSchema, taskUpdateSchema } from "./task.schema";
+import {
+  taskProgressUpdateSchema,
+  taskSchema,
+  taskUpdateSchema,
+} from "./task.schema";
 import { ZodError } from "zod";
 import { getParamString } from "../../utils/params";
 
@@ -249,6 +254,44 @@ export async function handleMarkTaskNotDone(
     res.status(200).json(updated);
   } catch (error) {
     console.error("[TASK_NOT_DONE_ERROR]", error);
+    next(error);
+  }
+}
+
+/* -------------------------------------------------------
+   SHARE PROGRESS UPDATE (AUTH REQUIRED)
+---------------------------------------------------------*/
+export async function handleShareTaskProgress(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const taskId = getParamString(req.params.id);
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return next(new BadRequestError("User ID is required"));
+  }
+  if (!taskId) {
+    return next(new BadRequestError("Task ID is required"));
+  }
+
+  try {
+    const parsed = taskProgressUpdateSchema.parse(req.body);
+    const progressUpdate = await shareTaskProgress(taskId, userId, parsed.text);
+    res.status(201).json({
+      progressUpdates: [progressUpdate],
+    });
+  } catch (error) {
+    console.error("[TASK_PROGRESS_UPDATE_ERROR]", error);
+
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: "Validation error",
+        issues: error.errors,
+      });
+    }
+
     next(error);
   }
 }

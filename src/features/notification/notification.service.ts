@@ -1,6 +1,7 @@
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { prisma } from "../../db/client";
 import { sendPushNotification } from "../../utils/sendPushNotification";
+import { schedulePush } from "../../utils/scheduleReminderPush";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 
@@ -146,6 +147,69 @@ if (!task) {
       },
     })),
   });
+}
+
+export async function createTaskProgressUpdateNotifications({
+  recipientIds,
+  senderId,
+  taskId,
+  progressUpdateId,
+  taskText,
+  progressText,
+  taskType,
+  senderName,
+}: {
+  recipientIds: string[];
+  senderId: string;
+  taskId: string;
+  progressUpdateId: string;
+  taskText: string;
+  progressText: string;
+  taskType: string;
+  senderName: string;
+}) {
+  const uniqueRecipientIds = [...new Set(recipientIds)].filter(
+    (recipientId) => recipientId !== senderId
+  );
+
+  if (!uniqueRecipientIds.length) return;
+
+  await prisma.notification.createMany({
+    data: uniqueRecipientIds.map((recipientId) => ({
+      userId: recipientId,
+      senderId,
+      type: NOTIFICATION_TYPES.TASK_PROGRESS_UPDATE,
+      taskType,
+      message: `${senderName} shared a progress update on your task.`,
+      metadata: {
+        taskId,
+        taskText,
+        progressText,
+        progressUpdateId,
+      },
+    })),
+  });
+
+  const recipients = await prisma.user.findMany({
+    where: {
+      id: { in: uniqueRecipientIds },
+      fcmToken: { not: null },
+    },
+    select: {
+      id: true,
+      fcmToken: true,
+    },
+  });
+
+  const pushBody = `${senderName} shared a progress update on "${taskText}"`;
+
+  await Promise.all(
+    recipients.map((recipient) =>
+      recipient.fcmToken
+        ? schedulePush(0, recipient.fcmToken, "📈 Progress update", pushBody)
+        : undefined
+    )
+  );
 }
 
 export async function sendTestDecisionDoneNotification(userId: string) {

@@ -3,6 +3,7 @@ import { verifyGoogleToken } from "../../middleware/verifyGoogleToken";
 import {
   handleGetFollowers,
   handleGetFollowing,
+  handleGetHomeSummary,
   handleGetMe,
   handleGetUserProfile,
   handleMatchUsers,
@@ -17,6 +18,7 @@ const router = Router();
 
 // Sync/login user
 router.post("/", verifyGoogleToken, handleSyncUser);
+router.post("/google-sync", verifyGoogleToken, handleSyncUser);
 
 // Match contacts (auth required)
 router.post("/match", requireAuth, handleMatchUsers);
@@ -29,6 +31,7 @@ router.get("/followers", optionalAuth, handleGetFollowers);
 router.get("/following", optionalAuth, handleGetFollowing);
 
 // Profile of currently logged-in user
+router.get("/me/home-summary", optionalAuth, handleGetHomeSummary);
 router.get("/me", requireAuth, handleGetMe);
 
 // Search friends (still requires auth)

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.taskUpdateSchema = exports.taskSchema = exports.adviceTaskSchema = exports.motivationTaskSchema = exports.decisionTaskSchema = exports.reminderTaskSchema = exports.baseTaskSchema = void 0;
+exports.taskProgressUpdateSchema = exports.taskUpdateSchema = exports.taskSchema = exports.adviceTaskSchema = exports.motivationTaskSchema = exports.decisionTaskSchema = exports.reminderTaskSchema = exports.baseTaskSchema = void 0;
 const zod_1 = require("zod");
 const helpersSchema = zod_1.z.array(zod_1.z.string()).optional();
 exports.baseTaskSchema = zod_1.z.object({
@@ -96,3 +96,6 @@ exports.taskUpdateSchema = zod_1.z.union([
     motivationUpdateSchema,
     adviceUpdateSchema,
 ]);
+exports.taskProgressUpdateSchema = zod_1.z.object({
+    text: zod_1.z.string().trim().min(1, "Progress update cannot be empty"),
+});

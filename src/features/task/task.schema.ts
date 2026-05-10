@@ -115,5 +115,10 @@ export const taskUpdateSchema = z.union([
   adviceUpdateSchema,
 ]);
 
+export const taskProgressUpdateSchema = z.object({
+  text: z.string().trim().min(1, "Progress update cannot be empty"),
+});
+
 export type CreateTaskSchemaInput = z.infer<typeof taskSchema>;
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>;
+export type TaskProgressUpdateInput = z.infer<typeof taskProgressUpdateSchema>;

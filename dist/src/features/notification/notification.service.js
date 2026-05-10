@@ -6,6 +6,7 @@ exports.markNotificationsAsRead = markNotificationsAsRead;
 exports.sendTestNotification = sendTestNotification;
 exports.createTaskHelperNotifications = createTaskHelperNotifications;
 exports.createDecisionTaskDoneNotifications = createDecisionTaskDoneNotifications;
+exports.createTaskProgressUpdateNotifications = createTaskProgressUpdateNotifications;
 exports.sendTestDecisionDoneNotification = sendTestDecisionDoneNotification;
 exports.createTaskAdviceNotification = createTaskAdviceNotification;
 exports.createCommentMentionNotifications = createCommentMentionNotifications;
@@ -14,6 +15,7 @@ exports.createMotivationMilestoneNotification = createMotivationMilestoneNotific
 const notificationTypes_1 = require("../../types/notificationTypes");
 const client_1 = require("../../db/client");
 const sendPushNotification_1 = require("../../utils/sendPushNotification");
+const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const MOTIVATION_PUSH_MILESTONES = [10, 100, 500, 1000];
 // 📨 Get notifications for the logged-in user
 async function getUserNotifications(userId) {
@@ -120,6 +122,40 @@ async function createDecisionTaskDoneNotifications({ helperIds, senderId, taskId
             },
         })),
     });
+}
+async function createTaskProgressUpdateNotifications({ recipientIds, senderId, taskId, progressUpdateId, taskText, progressText, taskType, senderName, }) {
+    const uniqueRecipientIds = [...new Set(recipientIds)].filter((recipientId) => recipientId !== senderId);
+    if (!uniqueRecipientIds.length)
+        return;
+    await client_1.prisma.notification.createMany({
+        data: uniqueRecipientIds.map((recipientId) => ({
+            userId: recipientId,
+            senderId,
+            type: notificationTypes_1.NOTIFICATION_TYPES.TASK_PROGRESS_UPDATE,
+            taskType,
+            message: `${senderName} shared a progress update on your task.`,
+            metadata: {
+                taskId,
+                taskText,
+                progressText,
+                progressUpdateId,
+            },
+        })),
+    });
+    const recipients = await client_1.prisma.user.findMany({
+        where: {
+            id: { in: uniqueRecipientIds },
+            fcmToken: { not: null },
+        },
+        select: {
+            id: true,
+            fcmToken: true,
+        },
+    });
+    const pushBody = `${senderName} shared a progress update on "${taskText}"`;
+    await Promise.all(recipients.map((recipient) => recipient.fcmToken
+        ? (0, scheduleReminderPush_1.schedulePush)(0, recipient.fcmToken, "📈 Progress update", pushBody)
+        : undefined));
 }
 async function sendTestDecisionDoneNotification(userId) {
     const user = await client_1.prisma.user.findUnique({

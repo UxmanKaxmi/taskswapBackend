@@ -25,6 +25,7 @@ model Task {
   Comment      Comment[]
   Push         Push[]
   ReminderNote ReminderNote[]
+  progressUpdates ProgressUpdate[]
   user         User           @relation(fields: [userId], references: [id])
   Vote         Vote[]
   helpers      User[]         @relation("TaskHelpers")
@@ -53,6 +54,7 @@ model User {
   referralLinks     ReferralLink[]
   featureFlags      FeatureFlags?
   ReminderNote      ReminderNote[]
+  progressUpdates    ProgressUpdate[]
   tasks             Task[]
   Vote              Vote[]
   helping           Task[]         @relation("TaskHelpers")
@@ -191,6 +193,19 @@ model Push {
 
   @@unique([userId, taskId])
   @@index([taskId])
+}
+
+model ProgressUpdate {
+  id        String   @id @default(uuid())
+  taskId    String
+  senderId  String
+  text      String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model FeatureFlags {
