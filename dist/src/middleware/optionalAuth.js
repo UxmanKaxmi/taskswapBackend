@@ -7,6 +7,7 @@ exports.optionalAuth = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const client_1 = require("../db/client");
 const seededUser_service_1 = require("../features/seededUser/seededUser.service");
+const touchUserActivity_1 = require("../utils/touchUserActivity");
 const optionalAuth = async (req, _res, next) => {
     const authHeader = req.headers.authorization;
     // ------------------------------------------
@@ -27,6 +28,9 @@ const optionalAuth = async (req, _res, next) => {
             select: { id: true, origin: true },
         });
         req.user = user && user.origin !== seededUser_service_1.USER_ORIGIN.SEEDED ? { id: user.id } : undefined;
+        if (req.user) {
+            void (0, touchUserActivity_1.touchUserActivity)(req.user.id);
+        }
     }
     catch (err) {
         if (err instanceof jsonwebtoken_1.default.TokenExpiredError || err instanceof jsonwebtoken_1.default.JsonWebTokenError) {

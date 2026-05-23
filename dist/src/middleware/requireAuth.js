@@ -7,6 +7,7 @@ exports.requireAuth = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const client_1 = require("../db/client");
 const seededUser_service_1 = require("../features/seededUser/seededUser.service");
+const touchUserActivity_1 = require("../utils/touchUserActivity");
 const requireAuth = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
@@ -26,6 +27,7 @@ const requireAuth = async (req, res, next) => {
         }
         // ✅ Set as req.user for consistent usage
         req.user = { id: user.id };
+        void (0, touchUserActivity_1.touchUserActivity)(user.id);
         console.log("✅ JWT token:", token);
         console.log("✅ Decoded token:", decoded);
         console.log("✅ req.user:", req.user);

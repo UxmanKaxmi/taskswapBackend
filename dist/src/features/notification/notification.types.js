@@ -15,6 +15,8 @@ exports.NOTIFICATION_TYPES = {
     taskHelper: "taskHelper",
     decisionDone: "decisionDone",
     taskCompleted: "taskCompleted",
+    taskMotivationUnfinishedReminder: "taskMotivationUnfinishedReminder",
+    taskMotivationHelpPushReminder: "taskMotivationHelpPushReminder",
     commentMention: "commentMention",
     taskProgressUpdate: "taskProgressUpdate",
 };

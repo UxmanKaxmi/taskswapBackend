@@ -18,6 +18,7 @@ const errors_1 = require("../../errors");
 const AppError_1 = require("../../errors/AppError");
 const user_service_2 = require("./user.service");
 const params_1 = require("../../utils/params");
+const touchUserActivity_1 = require("../../utils/touchUserActivity");
 const user_service_3 = require("./user.service");
 async function handleSyncUser(req, res, next) {
     const { id, email, name, photo, fcmToken } = req.body;
@@ -28,6 +29,7 @@ async function handleSyncUser(req, res, next) {
     }
     try {
         const user = await (0, user_service_1.syncUserToDB)({ id, email, name, photo, fcmToken });
+        void (0, touchUserActivity_1.touchUserActivity)(user.id);
         console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
         const token = jsonwebtoken_1.default.sign({ userId: user.id }, process.env.JWT_SECRET, {
             expiresIn: "7d",

@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserNotifications = getUserNotifications;
 exports.markNotificationAsRead = markNotificationAsRead;
 exports.markNotificationsAsRead = markNotificationsAsRead;
-exports.sendTestNotification = sendTestNotification;
 exports.createTaskHelperNotifications = createTaskHelperNotifications;
 exports.createDecisionTaskDoneNotifications = createDecisionTaskDoneNotifications;
 exports.createTaskCompletedNotifications = createTaskCompletedNotifications;
@@ -81,18 +80,6 @@ async function markNotificationsAsRead(notificationIds) {
         },
         data: { read: true },
     });
-}
-// 🔔 Send a test push notification to a user
-async function sendTestNotification(userId, title = "Test Notification", body = "🚀 This is a test.") {
-    const user = await client_1.prisma.user.findUnique({
-        where: { id: userId },
-        select: { fcmToken: true, origin: true },
-    });
-    console.log("🎯 Token:", user?.fcmToken);
-    if (!user?.fcmToken || user.origin !== seededUser_service_1.USER_ORIGIN.REAL) {
-        throw new Error("User or FCM token not found");
-    }
-    await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, title, body);
 }
 // 👥 Notify helpers when invited to a task
 async function createTaskHelperNotifications({ helperIds, senderId, taskId, taskText, }) {
