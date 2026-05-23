@@ -1,11 +1,20 @@
 // prisma/seed.ts
-import { prisma } from "../src/db/client";
-import { seedSeededUsers } from "../src/features/seededUser/seededUser.service";
+// prisma/seed.ts
+
+import { PrismaClient } from "@prisma/client";
+
+import { seedSeededUsers } from "../src/features/seededUser/seededUser.service.ts";
+
+const prisma = new PrismaClient();
 
 type SeedUser = {
+
   email: string;
+
   name: string;
+
   photo?: string | null;
+
 };
 
 type SeedTask = {

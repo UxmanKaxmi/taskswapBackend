@@ -27,7 +27,7 @@
     "test": "cross-env DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test?schema=public\" prisma migrate reset --force --skip-generate && jest",
     "test-reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
     "db-migrate": "prisma migrate dev --name init && prisma generate",
-    "seed": "ts-node --esm prisma/seed.ts",
+    "seed": "tsx prisma/seed.ts",
     "seed:users": "ts-node scripts/seedSeededUsers.ts",
     "create-feature": "ts-node scripts/createFeature.ts",
     "db-reset": "prisma migrate reset --force",
@@ -52,6 +52,7 @@
     "ts-node-dev": "^2.0.0",
     "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.22.3",
     "typescript": "^5.8.3"
   }
 }

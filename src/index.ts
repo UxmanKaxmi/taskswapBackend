@@ -53,10 +53,7 @@ async function startServer() {
   try {
     await prisma.$connect();
     startNotificationReminderSweep();
-    console.log(
-      "✅ Connected to the PostgreSQL database at:",
-      process.env.DATABASE_URL
-    );
+    console.log("✅ Connected to the PostgreSQL database");
 
     app.listen(PORT,"0.0.0.0", () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
