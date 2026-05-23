@@ -11,6 +11,7 @@ import commentRoutes from "./features/comment/comment.routes";
 import referralRoutes from "./features/referral/referral.routes";
 import pushRoutes from "./features/push/push.routes";
 import featureFlagsRoutes from "./features/featureFlags/featureFlags.routes";
+import { startNotificationReminderSweep } from "./features/notification/notificationReminderSweep.service";
 
 import { prisma } from "./db/client";
 import { errorHandler } from "./middleware/errorHandler";
@@ -51,6 +52,7 @@ app.use(errorHandler);
 async function startServer() {
   try {
     await prisma.$connect();
+    startNotificationReminderSweep();
     console.log(
       "✅ Connected to the PostgreSQL database at:",
       process.env.DATABASE_URL

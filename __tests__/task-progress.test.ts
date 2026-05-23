@@ -144,6 +144,31 @@ describe("Task progress updates", () => {
     ]);
   });
 
+  it("notifies both pushers and tagged helpers when the task is completed", async () => {
+    const completeRes = await request(app)
+      .patch(`/tasks/${taskId}/complete`)
+      .set(getAuthHeader(ownerId));
+
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body).toHaveProperty("completed", true);
+    expect(completeRes.body.id).toBe(taskId);
+
+    const notifications = await prisma.notification.findMany({
+      where: {
+        type: "task-completed",
+        taskType: "motivation",
+        userId: { in: [helperId, pusherId] },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    expect(notifications).toHaveLength(2);
+    expect(notifications.map((notification) => notification.userId).sort()).toEqual([
+      helperId,
+      pusherId,
+    ]);
+  });
+
   it("rejects a progress update sent within 6 hours", async () => {
     const cooldownTask = await prisma.task.create({
       data: {

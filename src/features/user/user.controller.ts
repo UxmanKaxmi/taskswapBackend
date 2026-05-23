@@ -9,11 +9,11 @@ import {
   toggleFollowUser,
 } from "./user.service";
 import jwt from "jsonwebtoken";
-import { User } from "@prisma/client";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
 import { getUserProfileById } from "./user.service";
 import { getParamString } from "../../utils/params";
+import { touchUserActivity } from "../../utils/touchUserActivity";
 
 import {
   getFollowersCount,
@@ -37,7 +37,8 @@ export async function handleSyncUser(
   }
 
   try {
-    const user: User = await syncUserToDB({ id, email, name, photo, fcmToken });
+    const user = await syncUserToDB({ id, email, name, photo, fcmToken });
+    void touchUserActivity(user.id);
 
     console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
 
@@ -50,7 +51,7 @@ export async function handleSyncUser(
     res.status(200).json({ user, token });
   } catch (error) {
     console.error("[USER_API_ERROR]", error);
-    next(new AppError("Failed to sync user", 500));
+    next(error instanceof AppError ? error : new AppError("Failed to sync user", 500));
   }
 }
 

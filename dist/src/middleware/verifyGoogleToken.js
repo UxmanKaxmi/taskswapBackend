@@ -3,6 +3,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyGoogleToken = void 0;
 const google_auth_library_1 = require("google-auth-library");
 const client = new google_auth_library_1.OAuth2Client();
+const getJwtHeader = (token) => {
+    const header = token.split(".")[0];
+    if (!header)
+        return null;
+    try {
+        return JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+    }
+    catch {
+        return null;
+    }
+};
 const verifyGoogleToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
@@ -10,6 +21,13 @@ const verifyGoogleToken = async (req, res, next) => {
         return;
     }
     const idToken = authHeader.split(" ")[1];
+    const jwtHeader = getJwtHeader(idToken);
+    if (jwtHeader?.alg === "HS256") {
+        res.status(401).json({
+            error: "Expected Google ID token, received app JWT",
+        });
+        return;
+    }
     try {
         const ticket = await client.verifyIdToken({
             idToken,

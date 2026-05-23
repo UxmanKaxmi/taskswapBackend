@@ -11,6 +11,7 @@ exports.NOTIFICATION_TYPES = {
     TASK: 'task',
     TASK_HELPER: 'task-helper',
     DECISION_DONE: 'decision-done',
+    TASK_COMPLETED: 'task-completed',
     TASK_ADVICE: "task-advice",
     TASK_PROGRESS_UPDATE: "task-progress-update",
     TASK_MOTIVATION_PUSH: "task-motivation-push",

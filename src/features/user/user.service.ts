@@ -2,6 +2,8 @@ import { prisma } from "../../db/client";
 import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
 import { getRecentTasksForUserProfile } from "../task/task.service";
+import { USER_ORIGIN } from "../seededUser/seededUser.service";
+import { toPublicUser } from "./user.serializers";
 import { HomeModules } from "./user.types";
 
 type ModuleTask = {
@@ -20,7 +22,10 @@ type ModuleTask = {
   helpers?: {
     id: string;
     name: string;
+    username?: string | null;
     photo: string | null;
+    avatarInitial?: string | null;
+    avatarColor?: string | null;
   }[];
 };
 
@@ -330,10 +335,33 @@ export async function syncUserToDB({
   photo?: string;
   fcmToken?: string;
 }) {
+  const existingSeededUser = await prisma.user.findFirst({
+    where: {
+      origin: USER_ORIGIN.SEEDED,
+      OR: [{ id }, { email }],
+    },
+    select: { id: true },
+  });
+
+  if (existingSeededUser) {
+    throw new AppError("Seeded users cannot authenticate", HttpStatus.FORBIDDEN);
+  }
+
   return prisma.user.upsert({
     where: { id },
-    update: { name, email, photo, fcmToken },
-    create: { id, name, email, photo, fcmToken },
+    update: { name, email, photo, fcmToken, origin: USER_ORIGIN.REAL },
+    create: { id, name, email, photo, fcmToken, origin: USER_ORIGIN.REAL },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      username: true,
+      photo: true,
+      avatarInitial: true,
+      avatarColor: true,
+      createdAt: true,
+      fcmToken: true,
+    },
   });
 }
 
@@ -365,12 +393,14 @@ export async function getMutualFriends(
       id: true,
       name: true,
       photo: true,
-      email: true,
+      username: true,
+      avatarInitial: true,
+      avatarColor: true,
     },
     take: 5,
   });
 
-  return mutuals;
+  return mutuals.map(toPublicUser);
 }
 
 export async function matchUsersByEmail(emails: string[], followerId: string) {
@@ -378,12 +408,16 @@ export async function matchUsersByEmail(emails: string[], followerId: string) {
     where: {
       email: { in: emails.map((e) => e.toLowerCase()) },
       id: { not: followerId }, // optional: exclude self
+      origin: USER_ORIGIN.REAL,
     },
     select: {
       id: true,
       email: true,
       name: true,
       photo: true,
+      username: true,
+      avatarInitial: true,
+      avatarColor: true,
     },
   });
 
@@ -445,24 +479,32 @@ export async function toggleFollowUser(
       },
     });
 
-    const follower = await prisma.user.findUnique({
-      where: { id: followerId },
-      select: { name: true, photo: true },
-    });
+    const [follower, followedUser] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: followerId },
+        select: { name: true, photo: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: followingId },
+        select: { origin: true },
+      }),
+    ]);
 
-    await prisma.notification.create({
-      data: {
-        userId: followingId,
-        senderId: followerId,
-        type: "follow",
-        message: `${follower?.name ?? "Someone"} followed you`,
-        metadata: {
-          followerId,
-          followerName: follower?.name,
-          followerPhoto: follower?.photo,
+    if (followedUser?.origin === USER_ORIGIN.REAL) {
+      await prisma.notification.create({
+        data: {
+          userId: followingId,
+          senderId: followerId,
+          type: "follow",
+          message: `${follower?.name ?? "Someone"} followed you`,
+          metadata: {
+            followerId,
+            followerName: follower?.name,
+            followerPhoto: follower?.photo,
+          },
         },
-      },
-    });
+      });
+    }
 
     return { success: true, action: "followed" };
   } catch (err) {
@@ -482,8 +524,10 @@ export async function getFollowers(userId: string) {
         select: {
           id: true,
           name: true,
-          email: true,
           photo: true,
+          username: true,
+          avatarInitial: true,
+          avatarColor: true,
         },
       },
     },
@@ -503,7 +547,7 @@ export async function getFollowers(userId: string) {
   const result = followers
     .filter((f) => f.follower !== null)
     .map((f) => ({
-      ...f.follower,
+      ...toPublicUser(f.follower),
       isFollowing: followingIds.has(f.follower.id),
     }));
 
@@ -525,8 +569,10 @@ export async function getFollowing(userId: string) {
         select: {
           id: true,
           name: true,
-          email: true,
           photo: true,
+          username: true,
+          avatarInitial: true,
+          avatarColor: true,
         },
       },
     },
@@ -536,7 +582,7 @@ export async function getFollowing(userId: string) {
   const result = followings
     .filter((f) => f.following !== null)
     .map((f) => ({
-      ...f.following,
+      ...toPublicUser(f.following),
       isFollowing: true,
     }));
 
@@ -555,7 +601,10 @@ export async function getUserById(userId: string) {
       id: true,
       name: true,
       email: true,
+      username: true,
       photo: true,
+      avatarInitial: true,
+      avatarColor: true,
       createdAt: true,
     },
   });
@@ -630,14 +679,16 @@ export async function searchFriendsService(
       id: { not: userId },
       OR: [
         { name: { contains: query, mode: "insensitive" } },
-        { email: { contains: query, mode: "insensitive" } },
+        { username: { contains: query, mode: "insensitive" } },
       ],
     },
     select: {
       id: true,
       name: true,
-      email: true,
       photo: true,
+      username: true,
+      avatarInitial: true,
+      avatarColor: true,
     },
     take: 10,
   });
@@ -645,29 +696,72 @@ export async function searchFriendsService(
   return users
     .filter((user) => (includeFollowed ? true : !followingIdSet.has(user.id)))
     .map((user) => ({
-      ...user,
+      ...toPublicUser(user),
       isFollowing: followingIdSet.has(user.id),
     }));
+}
+
+export async function getPublicProfileStatsForUser(userId: string) {
+  const [pushesSentCount, pushedTasks, tasksCompletedCount] = await Promise.all([
+    prisma.push.count({ where: { userId } }),
+    prisma.push.findMany({
+      where: { userId },
+      select: {
+        task: {
+          select: { userId: true },
+        },
+      },
+    }),
+    prisma.task.count({
+      where: {
+        userId,
+        completed: true,
+      },
+    }),
+  ]);
+
+  const peoplePushedCount = new Set(
+    pushedTasks
+      .map((push) => push.task.userId)
+      .filter((ownerId) => ownerId !== userId)
+  ).size;
+
+  return {
+    pushesSentCount,
+    peoplePushedCount,
+    peopleHelpedCount: peoplePushedCount,
+    tasksCompletedCount,
+  };
 }
 
 export async function getUserProfileById(
   targetUserId: string,
   currentUserId: string | null
 ) {
-  const user = await getUserById(targetUserId);
+  const user = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      photo: true,
+      avatarInitial: true,
+      avatarColor: true,
+    },
+  });
 
   if (!user) throw new AppError("User not found", HttpStatus.NOT_FOUND);
 
   const [
     followersCount,
     followingCount,
-    taskStats,
+    publicStats,
     recentTasks,
     mutualFriends,
   ] = await Promise.all([
     getFollowersCount(targetUserId),
     getFollowingCount(targetUserId),
-    getTaskStatsForUser(targetUserId),
+    getPublicProfileStatsForUser(targetUserId),
     getRecentTasksForUserProfile(targetUserId, currentUserId, 5),
     currentUserId ? getMutualFriends(currentUserId, targetUserId) : [],
   ]);
@@ -700,19 +794,19 @@ export async function getUserProfileById(
   }
 
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    photo: user.photo,
+    ...toPublicUser(user),
     bio: null,
     followersCount,
     followingCount,
     isFollowing,
     isFollowedBy,
     recentTasks,
+    recentActivity: recentTasks,
     mutualFriends,
-    taskSuccessRate: taskStats.successRate,
-    tasksDone: taskStats.tasksDone,
-    dayStreak: taskStats.dayStreak,
+    publicStats,
+    pushesSentCount: publicStats.pushesSentCount,
+    peoplePushedCount: publicStats.peoplePushedCount,
+    peopleHelpedCount: publicStats.peopleHelpedCount,
+    tasksCompletedCount: publicStats.tasksCompletedCount,
   };
 }

@@ -54,9 +54,9 @@ export const verifyGoogleToken = async (
     console.log("[✅ Verified Google User]", payload);
 
     req.body.id = payload.sub;
-    req.body.email = payload.email;
-    req.body.name = payload.name;
-    req.body.photo = payload.picture;
+    req.body.email = payload.email || req.body.email;
+    req.body.name = payload.name || req.body.name || payload.email?.split("@")[0];
+    req.body.photo = payload.picture || req.body.photo;
 
     next();
   } catch (err) {

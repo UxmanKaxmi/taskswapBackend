@@ -14,6 +14,7 @@ exports.NOTIFICATION_TYPES = {
     // notifications we added
     taskHelper: "taskHelper",
     decisionDone: "decisionDone",
+    taskCompleted: "taskCompleted",
     commentMention: "commentMention",
     taskProgressUpdate: "taskProgressUpdate",
 };

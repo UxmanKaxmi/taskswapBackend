@@ -17,9 +17,18 @@ if (!admin.apps.length) {
 export async function sendPushNotification(
   token: string,
   title: string,
-  body: string
+  body: string,
+  data?: Record<string, string | number | boolean | null | undefined>
 ) {
   console.log("📲 Sending push to:", token, title, body);
+
+  const normalizedData = data
+    ? Object.fromEntries(
+        Object.entries(data)
+          .filter(([, value]) => value !== undefined && value !== null)
+          .map(([key, value]) => [key, String(value)])
+      )
+    : undefined;
 
   try {
     await admin.messaging().send({
@@ -28,6 +37,7 @@ export async function sendPushNotification(
         title,
         body,
       },
+      data: normalizedData,
     });
     console.log("✅ Notification sent");
   } catch (error) {

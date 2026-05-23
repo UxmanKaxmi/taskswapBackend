@@ -38,8 +38,13 @@ model User {
   id                String         @id @default(cuid())
   email             String         @unique
   name              String
+  username          String?        @unique
   photo             String?
+  avatarInitial     String?
+  avatarColor       String?
+  origin            String         @default("real")
   createdAt         DateTime       @default(now())
+  lastOpenedAt      DateTime?
   fcmToken          String?
   Comment           Comment[]
   CommentLike       CommentLike[]
@@ -58,6 +63,8 @@ model User {
   tasks             Task[]
   Vote              Vote[]
   helping           Task[]         @relation("TaskHelpers")
+
+  @@index([origin])
 }
 
 model ReminderNote {
@@ -187,12 +194,15 @@ model Push {
   id        String   @id @default(uuid())
   userId    String
   taskId    String
+  source    String   @default("real")
+  message   String?
   createdAt DateTime @default(now())
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, taskId])
   @@index([taskId])
+  @@index([source, taskId])
 }
 
 model ProgressUpdate {

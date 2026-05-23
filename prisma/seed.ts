@@ -1,5 +1,6 @@
 // prisma/seed.ts
 import { prisma } from "../src/db/client";
+import { seedSeededUsers } from "../src/features/seededUser/seededUser.service";
 
 type SeedUser = {
   email: string;
@@ -48,6 +49,8 @@ async function main() {
       photo: "https://example.com/chris.png",
     },
   ];
+
+  await seedSeededUsers(prisma);
 
   const userByEmail = new Map<string, { id: string; email: string }>();
   for (const user of seedUsers) {

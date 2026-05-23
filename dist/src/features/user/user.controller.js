@@ -37,7 +37,7 @@ async function handleSyncUser(req, res, next) {
     }
     catch (error) {
         console.error("[USER_API_ERROR]", error);
-        next(new AppError_1.AppError("Failed to sync user", 500));
+        next(error instanceof AppError_1.AppError ? error : new AppError_1.AppError("Failed to sync user", 500));
     }
 }
 async function handleMatchUsers(req, res, next) {

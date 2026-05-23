@@ -3,6 +3,7 @@ import { prisma } from "../../db/client";
 import { BadRequestError } from "../../errors";
 import { ReminderNoteDTO, SendReminderNoteInput } from "./reminderNote.types";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
+import { USER_ORIGIN } from "../seededUser/seededUser.service";
 
 export async function sendReminderNote({
   taskId,
@@ -19,7 +20,7 @@ export async function sendReminderNote({
       userId: true,
       text: true,
       type: true,
-      user: { select: { fcmToken: true } },
+      user: { select: { fcmToken: true, origin: true } },
     },
   });
 
@@ -28,11 +29,18 @@ export async function sendReminderNote({
     throw new BadRequestError("You cannot remind yourself.");
 
   // Notify task owner via push
-  if (task.user?.fcmToken) {
+  if (task.user?.fcmToken && task.user.origin === USER_ORIGIN.REAL) {
     await sendPushNotification(
       task.user.fcmToken,
       "⏰ You got a reminder!",
-      message
+      message,
+      {
+        notificationType: NOTIFICATION_TYPES.REMINDER,
+        taskId,
+        taskType: task.type,
+        screen: "TaskDetail",
+        deeplinkPath: `/tasks/${taskId}`,
+      }
     );
   }
 
@@ -54,23 +62,25 @@ export async function sendReminderNote({
     select: { name: true, photo: true },
   });
 
-  // Create notification entry
-  await prisma.notification.create({
-    data: {
-      userId: task.userId,
-      senderId,
-      type: NOTIFICATION_TYPES.REMINDER,
-      taskType: task.type,
-      message: `${sender?.name ?? "Someone"} reminded you about your task.`,
-      metadata: {
-        taskId,
+  if (task.user.origin === USER_ORIGIN.REAL) {
+    // Create notification entry
+    await prisma.notification.create({
+      data: {
+        userId: task.userId,
         senderId,
-        taskText: task.text,
-        senderName: sender?.name,
-        senderPhoto: sender?.photo,
+        type: NOTIFICATION_TYPES.REMINDER,
+        taskType: task.type,
+        message: `${sender?.name ?? "Someone"} reminded you about your task.`,
+        metadata: {
+          taskId,
+          senderId,
+          taskText: task.text,
+          senderName: sender?.name,
+          senderPhoto: sender?.photo,
+        },
       },
-    },
-  });
+    });
+  }
 
   return reminder;
 }

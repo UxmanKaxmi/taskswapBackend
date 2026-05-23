@@ -1,11 +1,14 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
+import { prisma } from "../db/client";
+import { USER_ORIGIN } from "../features/seededUser/seededUser.service";
+import { touchUserActivity } from "../utils/touchUserActivity";
 
-export const optionalAuth = (
+export const optionalAuth = async (
   req: Request,
   _res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers.authorization;
 
   // ------------------------------------------
@@ -26,7 +29,15 @@ export const optionalAuth = (
       userId: string;
     };
 
-    req.user = { id: decoded.userId };
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, origin: true },
+    });
+
+    req.user = user && user.origin !== USER_ORIGIN.SEEDED ? { id: user.id } : undefined;
+    if (req.user) {
+      void touchUserActivity(req.user.id);
+    }
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError || err instanceof jwt.JsonWebTokenError) {
       req.user = undefined;

@@ -14,8 +14,11 @@ exports.increaseTaskViewCount = increaseTaskViewCount;
 const AppError_1 = require("../../errors/AppError");
 const client_1 = require("../../db/client");
 const httpStatus_1 = require("../../types/httpStatus");
+const notificationTypes_1 = require("../../types/notificationTypes");
 const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const notification_service_1 = require("../notification/notification.service");
+const seededPush_service_1 = require("../seededPush/seededPush.service");
+const user_serializers_1 = require("../user/user.serializers");
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 /* -------------------------------------------------------
    INTERNAL UTILS
@@ -81,7 +84,16 @@ async function transformTasksForFeed(tasks, userId) {
         select: {
             taskId: true,
             option: true,
-            user: { select: { id: true, name: true, photo: true } },
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    username: true,
+                    photo: true,
+                    avatarInitial: true,
+                    avatarColor: true,
+                },
+            },
         },
     });
     const voteMap = {};
@@ -91,7 +103,7 @@ async function transformTasksForFeed(tasks, userId) {
         if (!voteMap[taskId][option])
             voteMap[taskId][option] = { count: 0, voters: [] };
         voteMap[taskId][option].count++;
-        voteMap[taskId][option].voters.push({ ...user, photo: user.photo ?? undefined });
+        voteMap[taskId][option].voters.push((0, user_serializers_1.toPublicUser)(user));
     }
     const userVoteMap = {};
     if (viewerId) {
@@ -104,7 +116,7 @@ async function transformTasksForFeed(tasks, userId) {
         });
     }
     return tasks.map((task) => {
-        const { _count, Push, ...cleanTask } = task;
+        const { _count, Push, helpers, ...cleanTask } = task;
         const taskVotes = voteMap[task.id] || {};
         const transformedVotes = Object.fromEntries(Object.entries(taskVotes).map(([opt, v]) => [
             opt,
@@ -112,6 +124,7 @@ async function transformTasksForFeed(tasks, userId) {
         ]));
         return {
             ...cleanTask,
+            helpers: helpers.map(user_serializers_1.toPublicUser),
             commentsCount: task._count.Comment,
             reminderNoteCount: task._count.ReminderNote,
             voteCount: task._count.Vote,
@@ -175,7 +188,13 @@ async function createTask(input) {
     if (type === "reminder" && remindAt && user.fcmToken) {
         const delayMs = new Date(remindAt).getTime() - Date.now();
         if (delayMs > 0) {
-            (0, scheduleReminderPush_1.schedulePush)(delayMs, user.fcmToken, "⏰ Reminder", `It's time: "${text}"`);
+            (0, scheduleReminderPush_1.schedulePush)(delayMs, user.fcmToken, "⏰ Reminder", `It's time: "${text}"`, {
+                notificationType: notificationTypes_1.NOTIFICATION_TYPES.REMINDER,
+                taskId: createdTask.id,
+                taskType: type,
+                screen: "TaskDetail",
+                deeplinkPath: `/tasks/${createdTask.id}`,
+            });
         }
     }
     /* ---------------------------
@@ -183,7 +202,7 @@ async function createTask(input) {
     ----------------------------- */
     if (hasHelpers(input) && input.helpers?.length) {
         const helperUsers = await client_1.prisma.user.findMany({
-            where: { id: { in: input.helpers } },
+            where: { id: { in: input.helpers }, origin: "real" },
             select: { id: true, fcmToken: true },
         });
         const bodyMap = {
@@ -193,7 +212,13 @@ async function createTask(input) {
             decision: `Someone needs your input: “${text}”`,
         };
         await Promise.all(helperUsers.map((helper) => helper.fcmToken
-            ? (0, scheduleReminderPush_1.schedulePush)(0, helper.fcmToken, "🤝 Someone asked for your help", bodyMap[type])
+            ? (0, scheduleReminderPush_1.schedulePush)(0, helper.fcmToken, "🤝 Someone asked for your help", bodyMap[type], {
+                notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_HELPER,
+                taskId: createdTask.id,
+                taskType: type,
+                screen: "TaskDetail",
+                deeplinkPath: `/tasks/${createdTask.id}`,
+            })
             : undefined));
         await (0, notification_service_1.createTaskHelperNotifications)({
             helperIds: input.helpers,
@@ -201,6 +226,9 @@ async function createTask(input) {
             taskId: createdTask.id,
             taskText: text,
         });
+    }
+    if (type === "motivation") {
+        await (0, seededPush_service_1.scheduleSeededPushesForTask)(createdTask.id);
     }
     return createdTask;
 }
@@ -343,7 +371,16 @@ async function getTaskById(taskId, userId) {
             },
             Vote: {
                 include: {
-                    user: { select: { id: true, name: true, photo: true } },
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            username: true,
+                            photo: true,
+                            avatarInitial: true,
+                            avatarColor: true,
+                        },
+                    },
                 },
             },
             _count: { select: { Push: true } },
@@ -352,8 +389,16 @@ async function getTaskById(taskId, userId) {
                     orderBy: { createdAt: "desc" },
                     select: {
                         createdAt: true,
+                        message: true,
                         user: {
-                            select: { id: true, name: true, photo: true },
+                            select: {
+                                id: true,
+                                name: true,
+                                username: true,
+                                photo: true,
+                                avatarInitial: true,
+                                avatarColor: true,
+                            },
                         },
                     },
                 }
@@ -370,11 +415,7 @@ async function getTaskById(taskId, userId) {
             acc[v.option] = { count: 0, preview: [] };
         acc[v.option].count += 1;
         if (acc[v.option].preview.length < 3) {
-            acc[v.option].preview.push({
-                id: v.user.id,
-                name: v.user.name,
-                photo: v.user.photo ?? "",
-            });
+            acc[v.option].preview.push((0, user_serializers_1.toPublicUser)(v.user));
         }
         return acc;
     }, {});
@@ -414,7 +455,8 @@ async function getTaskById(taskId, userId) {
     const pushItems = (Array.isArray(Push) ? Push : []);
     const pushHistory = task.type === "motivation"
         ? pushItems.map((p) => ({
-            user: p.user,
+            user: (0, user_serializers_1.toPublicUser)(p.user),
+            message: p.message,
             pushedAt: p.createdAt,
         }))
         : [];
@@ -425,7 +467,9 @@ async function getTaskById(taskId, userId) {
         viewCount: task.viewCount, // 👈 ADD THIS
         hasVoted, // 👈 ADD THIS
         pushCount: task.type === "motivation" ? task._count.Push : 0,
-        hasPushed: userId && task.type === "motivation" ? pushItems.length > 0 : false,
+        hasPushed: userId && task.type === "motivation"
+            ? pushItems.some((push) => push.user.id === userId)
+            : false,
         pushHistory, // 👈 ADD THIS
         hasAdvised,
         hasReminded,
@@ -450,7 +494,16 @@ async function getAllTasks(userId, helpers) {
     const findArgs = {
         where,
         include: {
-            helpers: { select: { id: true, name: true, email: true, photo: true } },
+            helpers: {
+                select: {
+                    id: true,
+                    name: true,
+                    username: true,
+                    photo: true,
+                    avatarInitial: true,
+                    avatarColor: true,
+                },
+            },
             _count: {
                 select: {
                     Comment: true,
@@ -487,9 +540,18 @@ async function getAllTasks(userId, helpers) {
 }
 async function getRecentTasksForUserProfile(targetUserId, currentUserId, limit = 5) {
     const recentTasks = await client_1.prisma.task.findMany({
-        where: { userId: targetUserId },
+        where: { userId: targetUserId, isPublic: true },
         include: {
-            helpers: { select: { id: true, name: true, email: true, photo: true } },
+            helpers: {
+                select: {
+                    id: true,
+                    name: true,
+                    username: true,
+                    photo: true,
+                    avatarInitial: true,
+                    avatarColor: true,
+                },
+            },
             _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
             Push: currentUserId
                 ? {
@@ -520,26 +582,26 @@ async function deleteTask(id) {
 async function markTaskAsDone(taskId, userId) {
     const task = await client_1.prisma.task.findUnique({
         where: { id: taskId },
-        include: { helpers: { select: { id: true } } },
+        include: {
+            helpers: { select: { id: true } },
+            Push: { select: { userId: true } },
+        },
     });
     if (!task)
         throw new AppError_1.AppError("Task not found", httpStatus_1.HttpStatus.NOT_FOUND);
     if (task.userId !== userId)
         throw new AppError_1.AppError("Unauthorized", httpStatus_1.HttpStatus.UNAUTHORIZED);
-    if (task.type === "decision" && task.helpers.length > 0) {
-        const helperIds = task.helpers.map((h) => h.id);
-        const helpers = await client_1.prisma.user.findMany({
-            where: { id: { in: helperIds } },
-            select: { fcmToken: true },
-        });
-        await Promise.all(helpers.map((h) => h.fcmToken
-            ? (0, scheduleReminderPush_1.schedulePush)(0, h.fcmToken, "✅ Decision Finalized", `A decision you helped with is complete.`)
-            : undefined));
-        await (0, notification_service_1.createDecisionTaskDoneNotifications)({
-            helperIds,
+    const recipientIds = [
+        ...new Set([...task.Push.map((push) => push.userId), ...task.helpers.map((helper) => helper.id)]),
+    ].filter((recipientId) => recipientId !== userId);
+    if (recipientIds.length > 0) {
+        await (0, notification_service_1.createTaskCompletedNotifications)({
+            recipientIds,
             senderId: userId,
             taskId: task.id,
             taskText: task.text,
+            taskType: task.type,
+            senderName: task.name.trim() || "Someone",
         });
     }
     return client_1.prisma.task.update({

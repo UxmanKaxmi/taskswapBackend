@@ -11,12 +11,15 @@ import {
   AdviceTaskType,
 } from "./task.types";
 import { HttpStatus } from "../../types/httpStatus";
+import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { schedulePush } from "../../utils/scheduleReminderPush";
 import {
   createTaskHelperNotifications,
-  createDecisionTaskDoneNotifications,
+  createTaskCompletedNotifications,
   createTaskProgressUpdateNotifications,
 } from "../notification/notification.service";
+import { scheduleSeededPushesForTask } from "../seededPush/seededPush.service";
+import { toPublicUser } from "../user/user.serializers";
 
 type FeedTask = {
   id: string;
@@ -36,8 +39,10 @@ type FeedTask = {
   helpers: {
     id: string;
     name: string;
-    email: string;
+    username?: string | null;
     photo: string | null;
+    avatarInitial?: string | null;
+    avatarColor?: string | null;
   }[];
   _count: {
     Comment: number;
@@ -58,10 +63,14 @@ const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 type TaskPushHistoryItem = {
   createdAt: Date;
+  message: string | null;
   user: {
     id: string;
     name: string;
+    username?: string | null;
     photo: string | null;
+    avatarInitial?: string | null;
+    avatarColor?: string | null;
   };
 };
 
@@ -157,7 +166,16 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
     select: {
       taskId: true,
       option: true,
-      user: { select: { id: true, name: true, photo: true } },
+      user: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          photo: true,
+          avatarInitial: true,
+          avatarColor: true,
+        },
+      },
     },
   });
 
@@ -165,7 +183,7 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
     string,
     Record<
       string,
-      { count: number; voters: { id: string; name: string; photo?: string }[] }
+      { count: number; voters: ReturnType<typeof toPublicUser>[] }
     >
   > = {};
 
@@ -173,7 +191,7 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
     if (!voteMap[taskId]) voteMap[taskId] = {};
     if (!voteMap[taskId][option]) voteMap[taskId][option] = { count: 0, voters: [] };
     voteMap[taskId][option].count++;
-    voteMap[taskId][option].voters.push({ ...user, photo: user.photo ?? undefined });
+    voteMap[taskId][option].voters.push(toPublicUser(user));
   }
 
   const userVoteMap: Record<string, string> = {};
@@ -190,7 +208,7 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
   }
 
   return tasks.map((task) => {
-    const { _count, Push, ...cleanTask } = task;
+    const { _count, Push, helpers, ...cleanTask } = task;
     const taskVotes = voteMap[task.id] || {};
 
     const transformedVotes = Object.fromEntries(
@@ -202,6 +220,7 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
 
     return {
       ...cleanTask,
+      helpers: helpers.map(toPublicUser),
       commentsCount: task._count.Comment,
       reminderNoteCount: task._count.ReminderNote,
       voteCount: task._count.Vote,
@@ -290,7 +309,13 @@ const options =
   if (type === "reminder" && remindAt && user.fcmToken) {
     const delayMs = new Date(remindAt).getTime() - Date.now();
     if (delayMs > 0) {
-      schedulePush(delayMs, user.fcmToken, "⏰ Reminder", `It's time: "${text}"`);
+      schedulePush(delayMs, user.fcmToken, "⏰ Reminder", `It's time: "${text}"`, {
+        notificationType: NOTIFICATION_TYPES.REMINDER,
+        taskId: createdTask.id,
+        taskType: type,
+        screen: "TaskDetail",
+        deeplinkPath: `/tasks/${createdTask.id}`,
+      });
     }
   }
 
@@ -299,7 +324,7 @@ const options =
   ----------------------------- */
   if (hasHelpers(input) && input.helpers?.length) {
     const helperUsers = await prisma.user.findMany({
-      where: { id: { in: input.helpers } },
+      where: { id: { in: input.helpers }, origin: "real" },
       select: { id: true, fcmToken: true },
     });
 
@@ -313,7 +338,13 @@ const options =
     await Promise.all(
       helperUsers.map((helper) =>
         helper.fcmToken
-          ? schedulePush(0, helper.fcmToken, "🤝 Someone asked for your help", bodyMap[type])
+          ? schedulePush(0, helper.fcmToken, "🤝 Someone asked for your help", bodyMap[type], {
+              notificationType: NOTIFICATION_TYPES.TASK_HELPER,
+              taskId: createdTask.id,
+              taskType: type,
+              screen: "TaskDetail",
+              deeplinkPath: `/tasks/${createdTask.id}`,
+            })
           : undefined
       )
     );
@@ -324,6 +355,10 @@ const options =
       taskId: createdTask.id,
       taskText: text,
     });
+  }
+
+  if (type === "motivation") {
+    await scheduleSeededPushesForTask(createdTask.id);
   }
 
   return createdTask;
@@ -506,7 +541,16 @@ export async function getTaskById(taskId: string, userId?: string | null) {
       },
       Vote: {
         include: {
-          user: { select: { id: true, name: true, photo: true } },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              photo: true,
+              avatarInitial: true,
+              avatarColor: true,
+            },
+          },
         },
       },
       _count: { select: { Push: true } },
@@ -515,8 +559,16 @@ export async function getTaskById(taskId: string, userId?: string | null) {
             orderBy: { createdAt: "desc" },
             select: {
               createdAt: true,
+              message: true,
               user: {
-                select: { id: true, name: true, photo: true },
+                select: {
+                  id: true,
+                  name: true,
+                  username: true,
+                  photo: true,
+                  avatarInitial: true,
+                  avatarColor: true,
+                },
               },
             },
           }
@@ -533,14 +585,10 @@ export async function getTaskById(taskId: string, userId?: string | null) {
     if (!acc[v.option]) acc[v.option] = { count: 0, preview: [] };
     acc[v.option].count += 1;
     if (acc[v.option].preview.length < 3) {
-      acc[v.option].preview.push({
-        id: v.user.id,
-        name: v.user.name,
-        photo: v.user.photo ?? "",
-      });
+      acc[v.option].preview.push(toPublicUser(v.user));
     }
     return acc;
-  }, {} as Record<string, { count: number; preview: { id: string; name: string; photo: string }[] }>);
+  }, {} as Record<string, { count: number; preview: ReturnType<typeof toPublicUser>[] }>);
 
   const votedOption = userId
     ? task.Vote.find((v) => v.userId === userId)?.option ?? null
@@ -590,7 +638,8 @@ const pushItems = (Array.isArray(Push) ? Push : []) as unknown as TaskPushHistor
 const pushHistory =
   task.type === "motivation"
     ? pushItems.map((p) => ({
-        user: p.user,
+        user: toPublicUser(p.user),
+        message: p.message,
         pushedAt: p.createdAt,
       }))
     : [];
@@ -604,7 +653,9 @@ const pushHistory =
 
     pushCount: task.type === "motivation" ? task._count.Push : 0,
     hasPushed:
-      userId && task.type === "motivation" ? pushItems.length > 0 : false,
+      userId && task.type === "motivation"
+        ? pushItems.some((push) => push.user.id === userId)
+        : false,
     pushHistory, // 👈 ADD THIS
 
     hasAdvised,
@@ -638,7 +689,16 @@ export async function getAllTasks(
   const findArgs: Prisma.TaskFindManyArgs = {
     where,
     include: {
-      helpers: { select: { id: true, name: true, email: true, photo: true } },
+      helpers: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          photo: true,
+          avatarInitial: true,
+          avatarColor: true,
+        },
+      },
       _count: {
         select: {
           Comment: true,
@@ -684,9 +744,18 @@ export async function getRecentTasksForUserProfile(
   limit = 5
 ) {
   const recentTasks = await prisma.task.findMany({
-    where: { userId: targetUserId },
+    where: { userId: targetUserId, isPublic: true },
     include: {
-      helpers: { select: { id: true, name: true, email: true, photo: true } },
+      helpers: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          photo: true,
+          avatarInitial: true,
+          avatarColor: true,
+        },
+      },
       _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
       Push: currentUserId
         ? {
@@ -724,39 +793,28 @@ export async function deleteTask(id: string) {
 export async function markTaskAsDone(taskId: string, userId: string) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    include: { helpers: { select: { id: true } } },
+    include: {
+      helpers: { select: { id: true } },
+      Push: { select: { userId: true } },
+    },
   });
 
   if (!task) throw new AppError("Task not found", HttpStatus.NOT_FOUND);
   if (task.userId !== userId)
     throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
 
-  if (task.type === "decision" && task.helpers.length > 0) {
-    const helperIds = task.helpers.map((h) => h.id);
+  const recipientIds = [
+    ...new Set([...task.Push.map((push) => push.userId), ...task.helpers.map((helper) => helper.id)]),
+  ].filter((recipientId) => recipientId !== userId);
 
-    const helpers = await prisma.user.findMany({
-      where: { id: { in: helperIds } },
-      select: { fcmToken: true },
-    });
-
-    await Promise.all(
-      helpers.map((h) =>
-        h.fcmToken
-          ? schedulePush(
-              0,
-              h.fcmToken,
-              "✅ Decision Finalized",
-              `A decision you helped with is complete.`
-            )
-          : undefined
-      )
-    );
-
-    await createDecisionTaskDoneNotifications({
-      helperIds,
+  if (recipientIds.length > 0) {
+    await createTaskCompletedNotifications({
+      recipientIds,
       senderId: userId,
       taskId: task.id,
       taskText: task.text,
+      taskType: task.type,
+      senderName: task.name.trim() || "Someone",
     });
   }
 

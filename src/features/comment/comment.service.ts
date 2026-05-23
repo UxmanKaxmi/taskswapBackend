@@ -6,6 +6,7 @@ import {
   createTaskAdviceNotification,
 } from "../notification/notification.service";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
+import { USER_ORIGIN } from "../seededUser/seededUser.service";
 
 export async function createComment(input: CreateCommentInput) {
   return prisma.$transaction(async (tx) => {
@@ -41,7 +42,7 @@ export async function createComment(input: CreateCommentInput) {
 
       // 🔔 Push notifications (non-transactional on purpose)
       const recipients = await tx.user.findMany({
-        where: { id: { in: mentionedIds } },
+        where: { id: { in: mentionedIds }, origin: USER_ORIGIN.REAL },
         select: { fcmToken: true },
       });
 
@@ -53,7 +54,14 @@ export async function createComment(input: CreateCommentInput) {
               0,
               u.fcmToken!,
               "💬 You were mentioned",
-              `${input.text.slice(0, 50)}...`
+              `${input.text.slice(0, 50)}...`,
+              {
+                notificationType: NOTIFICATION_TYPES.COMMENT,
+                taskId: input.taskId,
+                commentId: comment.id,
+                screen: "TaskDetail",
+                deeplinkPath: `/tasks/${input.taskId}`,
+              }
             )
           )
       );

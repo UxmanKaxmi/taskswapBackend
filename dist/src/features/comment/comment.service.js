@@ -6,6 +6,8 @@ exports.toggleCommentLike = toggleCommentLike;
 const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const client_1 = require("../../db/client");
 const notification_service_1 = require("../notification/notification.service");
+const notificationTypes_1 = require("../../types/notificationTypes");
+const seededUser_service_1 = require("../seededUser/seededUser.service");
 async function createComment(input) {
     return client_1.prisma.$transaction(async (tx) => {
         // 1️⃣ Create comment
@@ -34,12 +36,18 @@ async function createComment(input) {
             });
             // 🔔 Push notifications (non-transactional on purpose)
             const recipients = await tx.user.findMany({
-                where: { id: { in: mentionedIds } },
+                where: { id: { in: mentionedIds }, origin: seededUser_service_1.USER_ORIGIN.REAL },
                 select: { fcmToken: true },
             });
             await Promise.all(recipients
                 .filter((u) => !!u.fcmToken)
-                .map((u) => (0, scheduleReminderPush_1.schedulePush)(0, u.fcmToken, "💬 You were mentioned", `${input.text.slice(0, 50)}...`)));
+                .map((u) => (0, scheduleReminderPush_1.schedulePush)(0, u.fcmToken, "💬 You were mentioned", `${input.text.slice(0, 50)}...`, {
+                notificationType: notificationTypes_1.NOTIFICATION_TYPES.COMMENT,
+                taskId: input.taskId,
+                commentId: comment.id,
+                screen: "TaskDetail",
+                deeplinkPath: `/tasks/${input.taskId}`,
+            })));
         }
         return comment;
     });

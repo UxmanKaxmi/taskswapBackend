@@ -13,6 +13,9 @@ export const NOTIFICATION_TYPES = {
   // notifications we added
   taskHelper: "taskHelper",
   decisionDone: "decisionDone",
+  taskCompleted: "taskCompleted",
+  taskMotivationUnfinishedReminder: "taskMotivationUnfinishedReminder",
+  taskMotivationHelpPushReminder: "taskMotivationHelpPushReminder",
   commentMention: "commentMention",
   taskProgressUpdate: "taskProgressUpdate",
 } as const;
@@ -28,6 +31,10 @@ export type TaskRefMeta = {
 
 export type DecisionDoneMeta = TaskRefMeta & {};
 export type TaskHelperMeta = TaskRefMeta & {};
+export type MotivationUnfinishedReminderMeta = TaskRefMeta & {};
+export type MotivationHelpPushReminderMeta = TaskRefMeta & {
+  taskCount?: number;
+};
 export type CommentMentionMeta = TaskRefMeta & {
   commentId: string;
   commentText?: string;
@@ -45,6 +52,9 @@ export interface MetadataByType {
 
   taskHelper: TaskHelperMeta;
   decisionDone: DecisionDoneMeta;
+  taskCompleted: TaskRefMeta;
+  taskMotivationUnfinishedReminder: MotivationUnfinishedReminderMeta;
+  taskMotivationHelpPushReminder: MotivationHelpPushReminderMeta;
   commentMention: CommentMentionMeta;
   taskProgressUpdate: TaskRefMeta & {
     progressText?: string;

@@ -8,6 +8,7 @@ const optionalAuth_1 = require("../../middleware/optionalAuth");
 const router = (0, express_1.Router)();
 // Sync/login user
 router.post("/", verifyGoogleToken_1.verifyGoogleToken, user_controller_1.handleSyncUser);
+router.post("/google-sync", verifyGoogleToken_1.verifyGoogleToken, user_controller_1.handleSyncUser);
 // Match contacts (auth required)
 router.post("/match", requireAuth_1.requireAuth, user_controller_1.handleMatchUsers);
 // Follow/unfollow
