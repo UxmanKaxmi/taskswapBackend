@@ -150,8 +150,10 @@ async function createTask(input) {
             text,
             type,
             userId,
+            isPublic: true,
             avatar,
             name,
+            feeling: input.feeling ?? null,
             remindAt,
             options,
             deliverAt,
@@ -220,6 +222,7 @@ async function updateTask(id, data) {
         text: data.text,
         name: data.name,
         type: data.type,
+        feeling: data.feeling,
         remindAt: data.type === "reminder" ? data.remindAt : undefined,
         options: data.type === "decision"
             ? data.options?.map((o) => o.trim()) ?? []
@@ -240,13 +243,6 @@ async function updateTask(id, data) {
    GET SINGLE TASK (optional auth)
 --------------------------------------------------------- */
 async function getTaskById(taskId, userId) {
-    // ---------------------------------
-    // 🔥 Increment view count (non-blocking)
-    // ---------------------------------
-    client_1.prisma.task.update({
-        where: { id: taskId },
-        data: { viewCount: { increment: 1 } },
-    }).catch(() => { }); // prevent any crash from slowing down response
     // ---------------------------------
     // Fetch task with relations
     // ---------------------------------
@@ -273,8 +269,16 @@ async function getTaskById(taskId, userId) {
                 : false,
         },
     });
-    if (!task)
+    if (!task || !task.isPublic) {
         throw new AppError_1.AppError("Task not found", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    // ---------------------------------
+    // 🔥 Increment view count (non-blocking)
+    // ---------------------------------
+    client_1.prisma.task.update({
+        where: { id: taskId },
+        data: { viewCount: { increment: 1 } },
+    }).catch(() => { }); // prevent any crash from slowing down response
     // ---------------------------------
     // Voting logic
     // ---------------------------------
@@ -351,6 +355,7 @@ async function getAllTasks(userId, helpers) {
        If logged in → show "following" feed
        If logged out → show ALL public posts
     ----------------------------------------------- */
+<<<<<<< Updated upstream
     let taskFilterUserIds;
     if (userId) {
         const followings = await client_1.prisma.follow.findMany({
@@ -360,6 +365,11 @@ async function getAllTasks(userId, helpers) {
         taskFilterUserIds = followings.map((f) => f.followingId);
         if (!helpers?.excludeSelf)
             taskFilterUserIds = [userId, ...taskFilterUserIds];
+=======
+    let where = { isPublic: true };
+    if (helpers?.excludeSelf && userId) {
+        where = { ...where, userId: { not: userId } };
+>>>>>>> Stashed changes
     }
     const requestedLimit = helpers?.limit ?? 20;
     const normalizedLimit = Math.max(1, Math.min(requestedLimit, 50));
@@ -479,11 +489,21 @@ async function markTaskAsNotDone(taskId, userId) {
 async function getTaskViewCount(taskId) {
     const task = await client_1.prisma.task.findUnique({
         where: { id: taskId },
-        select: { viewCount: true },
+        select: { viewCount: true, isPublic: true },
     });
-    return task?.viewCount ?? null;
+    if (!task || !task.isPublic) {
+        return null;
+    }
+    return task.viewCount;
 }
 async function increaseTaskViewCount(taskId) {
+    const task = await client_1.prisma.task.findUnique({
+        where: { id: taskId },
+        select: { id: true, isPublic: true },
+    });
+    if (!task || !task.isPublic) {
+        return false;
+    }
     await client_1.prisma.task.update({
         where: { id: taskId },
         data: { viewCount: { increment: 1 } },

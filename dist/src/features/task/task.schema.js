@@ -2,11 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.taskUpdateSchema = exports.taskSchema = exports.adviceTaskSchema = exports.motivationTaskSchema = exports.decisionTaskSchema = exports.reminderTaskSchema = exports.baseTaskSchema = void 0;
 const zod_1 = require("zod");
+const task_types_1 = require("./task.types");
 const helpersSchema = zod_1.z.array(zod_1.z.string()).optional();
 exports.baseTaskSchema = zod_1.z.object({
     text: zod_1.z.string().min(1),
     type: zod_1.z.enum(["reminder", "decision", "motivation", "advice"]),
     avatar: zod_1.z.string().optional(),
+    feeling: zod_1.z.enum(task_types_1.FEELING_TAGS).nullable().optional(),
 });
 exports.reminderTaskSchema = exports.baseTaskSchema.extend({
     type: zod_1.z.literal("reminder"),
@@ -52,6 +54,7 @@ const baseUpdateSchema = zod_1.z.object({
     type: zod_1.z.enum(["reminder", "decision", "motivation", "advice"]).optional(),
     avatar: zod_1.z.string().optional(),
     name: zod_1.z.string().optional(),
+    feeling: zod_1.z.enum(task_types_1.FEELING_TAGS).nullable().optional(),
 });
 const reminderUpdateSchema = baseUpdateSchema.extend({
     type: zod_1.z.literal("reminder").optional(),

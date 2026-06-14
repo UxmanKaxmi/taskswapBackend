@@ -9,6 +9,7 @@ import {
   TaskType,
   GetAllTasksHelpers,
   AdviceTaskType,
+  FeelingTag,
 } from "./task.types";
 import { HttpStatus } from "../../types/httpStatus";
 import { schedulePush } from "../../utils/scheduleReminderPush";
@@ -28,6 +29,7 @@ type FeedTask = {
   deliverAt: Date | null;
   avatar: string;
   name: string;
+  feeling: FeelingTag | null;
   completed: boolean;
   completedAt: Date | null;
   isPublic: boolean;
@@ -246,8 +248,10 @@ const options =
       text,
       type,
       userId,
+      isPublic: true,
       avatar,
       name,
+      feeling: input.feeling ?? null,
       remindAt,
       options,
       deliverAt,
@@ -336,6 +340,7 @@ export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
     text: data.text,
     name: data.name,
     type: data.type,
+    feeling: data.feeling,
     remindAt: data.type === "reminder" ? data.remindAt : undefined,
     options:
   data.type === "decision"
@@ -360,14 +365,6 @@ export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
 --------------------------------------------------------- */
 
 export async function getTaskById(taskId: string, userId?: string | null) {
-  // ---------------------------------
-  // 🔥 Increment view count (non-blocking)
-  // ---------------------------------
-  prisma.task.update({
-    where: { id: taskId },
-    data: { viewCount: { increment: 1 } },
-  }).catch(() => {}); // prevent any crash from slowing down response
-
   // ---------------------------------
   // Fetch task with relations
   // ---------------------------------
@@ -395,7 +392,17 @@ const task = await prisma.task.findUnique({
   },
 });
 
-  if (!task) throw new AppError("Task not found", HttpStatus.NOT_FOUND);
+  if (!task || !task.isPublic) {
+    throw new AppError("Task not found", HttpStatus.NOT_FOUND);
+  }
+
+  // ---------------------------------
+  // 🔥 Increment view count (non-blocking)
+  // ---------------------------------
+  prisma.task.update({
+    where: { id: taskId },
+    data: { viewCount: { increment: 1 } },
+  }).catch(() => {}); // prevent any crash from slowing down response
 
   // ---------------------------------
   // Voting logic
@@ -494,9 +501,9 @@ export async function getAllTasks(
   /* ---------------------------------------------
      Always show public feed (optional excludeSelf)
   ----------------------------------------------- */
-  let where: Prisma.TaskWhereInput = {};
+  let where: Prisma.TaskWhereInput = { isPublic: true };
   if (helpers?.excludeSelf && userId) {
-    where = { userId: { not: userId } };
+    where = { ...where, userId: { not: userId } };
   }
 
   const requestedLimit = helpers?.limit ?? 20;
@@ -652,13 +659,26 @@ export async function markTaskAsNotDone(taskId: string, userId: string) {
 export async function getTaskViewCount(taskId: string) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { viewCount: true },
+    select: { viewCount: true, isPublic: true },
   });
 
-  return task?.viewCount ?? null;
+  if (!task || !task.isPublic) {
+    return null;
+  }
+
+  return task.viewCount;
 }
 
 export async function increaseTaskViewCount(taskId: string) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { id: true, isPublic: true },
+  });
+
+  if (!task || !task.isPublic) {
+    return false;
+  }
+
   await prisma.task.update({
     where: { id: taskId },
     data: { viewCount: { increment: 1 } },

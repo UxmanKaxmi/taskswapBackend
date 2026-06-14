@@ -1,5 +1,16 @@
 export type TaskType = "reminder" | "advice" | "decision" | "motivation";
 
+export const FEELING_TAGS = [
+  "stuck",
+  "nervous",
+  "tired",
+  "avoiding_it",
+  "overwhelmed",
+  "almost_there",
+] as const;
+
+export type FeelingTag = (typeof FEELING_TAGS)[number];
+
 /**
  * Shared fields across all task types.
  */
@@ -8,6 +19,7 @@ interface TaskBase {
   userId: string;
   avatar?: string;
   name?: string;
+  feeling?: FeelingTag | null;
 }
 
 /**

@@ -11,6 +11,7 @@ model Task {
   id           String         @id @default(uuid())
   text         String
   type         TaskType
+  feeling      FeelingTag?
   createdAt    DateTime       @default(now())
   viewCount    Int            @default(0)
   userId       String
@@ -224,4 +225,13 @@ enum TaskType {
   advice
   decision
   motivation
+}
+
+enum FeelingTag {
+  stuck
+  nervous
+  tired
+  avoiding_it
+  overwhelmed
+  almost_there
 }

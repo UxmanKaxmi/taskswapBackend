@@ -50,7 +50,12 @@ app.use(errorHandler_1.errorHandler);
 async function startServer() {
     try {
         await client_1.prisma.$connect();
+<<<<<<< Updated upstream
         console.log("✅ Connected to the PostgreSQL database at:", process.env.DATABASE_URL);
+=======
+        (0, notificationReminderSweep_service_1.startNotificationReminderSweep)();
+        console.log("✅ Connected to the PostgreSQL database");
+>>>>>>> Stashed changes
         app.listen(PORT, "0.0.0.0", () => {
             console.log(`🚀 Server running on http://localhost:${PORT}`);
         });
