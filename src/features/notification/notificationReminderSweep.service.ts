@@ -1,6 +1,10 @@
 import { prisma } from "../../db/client";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { sendPushNotification } from "../../utils/sendPushNotification";
+import {
+  getHelpPushReminderNotificationText,
+  getUnfinishedMotivationReminderText,
+} from "../../utils/notificationTextCatalog";
 import { USER_ORIGIN } from "../seededUser/seededUser.service";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -75,7 +79,7 @@ async function sendUnfinishedMotivationReminder(user: {
   id: string;
   text: string;
 }) {
-  const message = `Your motivation "${task.text}" still needs attention.`;
+  const { title, body } = getUnfinishedMotivationReminderText(task.text);
 
   await prisma.notification.create({
     data: {
@@ -83,24 +87,19 @@ async function sendUnfinishedMotivationReminder(user: {
       senderId: null,
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
       taskType: "motivation",
-      message,
+      message: body,
       metadata: buildTaskMetadata(task.id, task.text),
     },
   });
 
   if (user.fcmToken) {
-    await sendPushNotification(
-      user.fcmToken,
-      "Keep going",
-      message,
-      {
-        notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
-        taskId: task.id,
-        taskType: "motivation",
-        screen: "TaskDetail",
-        deeplinkPath: `/tasks/${task.id}`,
-      }
-    );
+    await sendPushNotification(user.fcmToken, title, body, {
+      notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
+      taskId: task.id,
+      taskType: "motivation",
+      screen: "TaskDetail",
+      deeplinkPath: `/tasks/${task.id}`,
+    });
   }
 }
 
@@ -108,10 +107,7 @@ async function sendHelpPushReminder(user: {
   id: string;
   fcmToken: string | null;
 }, taskCount: number) {
-  const message =
-    taskCount === 1
-      ? "One motivation task is waiting for your push."
-      : `${taskCount} motivation tasks are waiting for your push.`;
+  const { title, body } = getHelpPushReminderNotificationText(taskCount);
 
   await prisma.notification.create({
     data: {
@@ -119,7 +115,7 @@ async function sendHelpPushReminder(user: {
       senderId: null,
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
       taskType: "motivation",
-      message,
+      message: body,
       metadata: {
         taskCount,
       },
@@ -127,17 +123,12 @@ async function sendHelpPushReminder(user: {
   });
 
   if (user.fcmToken) {
-    await sendPushNotification(
-      user.fcmToken,
-      "Help someone push",
-      message,
-      {
-        notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
-        taskType: "motivation",
-        screen: "Home",
-        deeplinkPath: "/",
-      }
-    );
+    await sendPushNotification(user.fcmToken, title, body, {
+      notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
+      taskType: "motivation",
+      screen: "Home",
+      deeplinkPath: "/",
+    });
   }
 }
 

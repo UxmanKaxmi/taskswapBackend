@@ -3,11 +3,24 @@ import { FEELING_TAGS } from "./task.types";
 
 const helpersSchema = z.array(z.string()).optional();
 
+const normalizeFeelingTag = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return value;
+  if (typeof value !== "string") return value;
+
+  const slug = value.trim().toLowerCase().replace(/\s+/g, "_");
+  return slug;
+};
+
+const feelingSchema = z.preprocess(
+  normalizeFeelingTag,
+  z.enum(FEELING_TAGS).nullable().optional()
+);
+
 export const baseTaskSchema = z.object({
   text: z.string().min(1),
   type: z.enum(["reminder", "decision", "motivation", "advice"]),
   avatar: z.string().optional(),
-  feeling: z.enum(FEELING_TAGS).nullable().optional(),
+  feeling: feelingSchema,
 });
 
 export const reminderTaskSchema = baseTaskSchema.extend({
@@ -58,12 +71,16 @@ export const taskSchema = z.discriminatedUnion("type", [
   adviceTaskSchema,
 ]);
 
+export const taskProgressUpdateSchema = z.object({
+  text: z.string().min(1),
+});
+
 const baseUpdateSchema = z.object({
   text: z.string().optional(),
   type: z.enum(["reminder", "decision", "motivation", "advice"]).optional(),
   avatar: z.string().optional(),
   name: z.string().optional(),
-  feeling: z.enum(FEELING_TAGS).nullable().optional(),
+  feeling: feelingSchema,
 });
 
 const reminderUpdateSchema = baseUpdateSchema.extend({

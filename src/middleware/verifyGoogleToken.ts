@@ -33,10 +33,20 @@ export const verifyGoogleToken = async (
 
     console.log("[✅ Verified Google User]", payload);
 
-    req.body.id = payload.sub;
-    req.body.email = payload.email;
-    req.body.name = payload.name;
-    req.body.photo = payload.picture;
+    const body = req.body ?? {};
+    const email = getNonEmptyString(payload.email) ?? getNonEmptyString(body.email);
+    const name =
+      getNonEmptyString(payload.name) ??
+      getNonEmptyString(body.name) ??
+      buildFallbackName(email);
+
+    req.body = {
+      ...body,
+      id: payload.sub,
+      email,
+      name,
+      photo: getNonEmptyString(payload.picture) ?? getNonEmptyString(body.photo) ?? "",
+    };
 
     next();
   } catch (err) {
@@ -44,3 +54,23 @@ export const verifyGoogleToken = async (
     res.status(401).json({ error: "Token verification failed" });
   }
 };
+
+function getNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function buildFallbackName(email?: string): string {
+  const localPart = email?.split("@")[0]?.trim();
+
+  if (!localPart) {
+    return "User";
+  }
+
+  return localPart
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, char => char.toUpperCase());
+}

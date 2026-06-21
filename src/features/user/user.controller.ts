@@ -19,6 +19,7 @@ import {
   getFollowersCount,
   getFollowingCount,
   getTaskStatsForUser,
+  getHomeSummaryForUser,
 } from "./user.service";
 
 export async function handleSyncUser(
@@ -215,6 +216,35 @@ export async function handleGetMe(
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
   }
+}
+
+export async function handleGetHomeSummary(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return next(new AppError("Unauthorized", 401));
+
+    const utcOffsetMinutes = parseUtcOffsetMinutes(req.query.utcOffsetMinutes);
+    const summary = await getHomeSummaryForUser(userId, utcOffsetMinutes);
+    res.status(200).json(summary);
+  } catch (err) {
+    console.error("[HOME_SUMMARY_ERROR]", err);
+    next(new AppError("Failed to fetch home summary", 500));
+  }
+}
+
+function parseUtcOffsetMinutes(value: unknown): number {
+  const raw = getParamString(value);
+  const parsed = raw ? Number(raw) : 0;
+
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return Math.max(-14 * 60, Math.min(14 * 60, Math.trunc(parsed)));
 }
 
 export async function searchFriends(

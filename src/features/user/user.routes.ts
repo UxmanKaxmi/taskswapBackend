@@ -4,6 +4,7 @@ import {
   handleGetFollowers,
   handleGetFollowing,
   handleGetMe,
+  handleGetHomeSummary,
   handleGetUserProfile,
   handleMatchUsers,
   handleSyncUser,
@@ -30,6 +31,9 @@ router.get("/following", optionalAuth, handleGetFollowing);
 
 // Profile of currently logged-in user
 router.get("/me", requireAuth, handleGetMe);
+
+// Home dashboard summary for the logged-in user
+router.get("/me/home-summary", requireAuth, handleGetHomeSummary);
 
 // Search friends (still requires auth)
 router.get("/search-friends", requireAuth, searchFriends);

@@ -17,7 +17,8 @@ if (!admin.apps.length) {
 export async function sendPushNotification(
   token: string,
   title: string,
-  body: string
+  body: string,
+  data?: Record<string, string>
 ) {
   console.log("📲 Sending push to:", token, title, body);
 
@@ -28,6 +29,7 @@ export async function sendPushNotification(
         title,
         body,
       },
+      ...(data ? { data } : {}),
     });
     console.log("✅ Notification sent");
   } catch (error) {

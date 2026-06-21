@@ -8,55 +8,128 @@ datasource db {
 }
 
 model Task {
-  id           String         @id @default(uuid())
-  text         String
-  type         TaskType
-  feeling      FeelingTag?
-  createdAt    DateTime       @default(now())
-  viewCount    Int            @default(0)
-  userId       String
-  remindAt     DateTime?
-  options      String[]       @default([])
-  deliverAt    DateTime?
-  avatar       String         @default("")
-  name         String         @default("")
-  completed    Boolean        @default(false)
-  completedAt  DateTime?
-  isPublic     Boolean        @default(true)
-  Comment      Comment[]
-  Push         Push[]
-  ReminderNote ReminderNote[]
-  user         User           @relation(fields: [userId], references: [id])
-  Vote         Vote[]
-  helpers      User[]         @relation("TaskHelpers")
+  id               String           @id @default(uuid())
+  text             String
+  type             TaskType
+  feeling          FeelingTag?
+  createdAt        DateTime         @default(now())
+  viewCount        Int              @default(0)
+  userId           String
+  remindAt         DateTime?
+  options          String[]         @default([])
+  deliverAt        DateTime?
+  avatar           String           @default("")
+  name             String           @default("")
+  pushCount        Int              @default(0)
+  latestActivityAt DateTime         @default(now())
+  isAlmostThere    Boolean          @default(false)
+  completed        Boolean          @default(false)
+  completedAt      DateTime?
+  isPublic         Boolean          @default(true)
+  Comment          Comment[]
+  cheers           Cheer[]
+  beats            TaskBeat[]
+  Push             Push[]
+  ReminderNote     ReminderNote[]
+  progressUpdates  ProgressUpdate[]
+  user             User             @relation(fields: [userId], references: [id])
+  Vote             Vote[]
+  helpers          User[]           @relation("TaskHelpers")
 
   @@unique([text, userId])
   @@index([userId, createdAt])
 }
 
 model User {
-  id                String         @id @default(cuid())
-  email             String         @unique
+  id                String           @id @default(cuid())
+  email             String           @unique
   name              String
+  username          String?          @unique
   photo             String?
-  createdAt         DateTime       @default(now())
+  avatarInitial     String?
+  avatarColor       String?
+  origin            String           @default("real")
+  createdAt         DateTime         @default(now())
+  lastOpenedAt      DateTime?
   fcmToken          String?
   Comment           Comment[]
+  cheers            Cheer[]
   CommentLike       CommentLike[]
-  followers         Follow[]       @relation("FollowedBy")
-  following         Follow[]       @relation("Following")
-  sentNotifications Notification[] @relation("SenderNotifications")
-  notifications     Notification[] @relation("UserNotifications")
+  followers         Follow[]         @relation("FollowedBy")
+  following         Follow[]         @relation("Following")
+  sentNotifications Notification[]   @relation("SenderNotifications")
+  notifications     Notification[]   @relation("UserNotifications")
   Push              Push[]
-  referralsRecv     Referral[]     @relation("ReferralsRecv")
-  referralsSent     Referral[]     @relation("ReferralsSent")
+  referralsRecv     Referral[]       @relation("ReferralsRecv")
+  referralsSent     Referral[]       @relation("ReferralsSent")
   referralCode      ReferralCode?
   referralLinks     ReferralLink[]
   featureFlags      FeatureFlags?
   ReminderNote      ReminderNote[]
+  progressUpdates   ProgressUpdate[]
   tasks             Task[]
   Vote              Vote[]
-  helping           Task[]         @relation("TaskHelpers")
+  helping           Task[]           @relation("TaskHelpers")
+  feedback          Feedback[]
+
+  @@index([origin])
+}
+
+model TaskBeat {
+  id        String          @id @default(uuid())
+  taskId    String
+  type      TaskBeatType
+  updateId  String?         @unique
+  createdAt DateTime        @default(now())
+  task      Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  update    ProgressUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  cheers    Cheer[]
+
+  @@index([taskId, createdAt])
+  @@index([updateId])
+}
+
+model Cheer {
+  id                 String   @id @default(uuid())
+  taskId             String
+  beatId             String
+  userId             String
+  presetKey          String
+  presetTextSnapshot String
+  createdAt          DateTime @default(now())
+  task               Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  beat               TaskBeat @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([beatId, userId])
+  @@index([taskId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Feedback {
+  id            String            @id @default(uuid())
+  category      FeedbackCategory?
+  message       String
+  appVersion    String
+  platform      String
+  device        String?
+  osVersion     String?
+  currentScreen String?
+  userId        String?
+  timeSubmitted DateTime
+  createdAt     DateTime          @default(now())
+  user          User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+enum FeedbackCategory {
+  confusing
+  bug
+  idea
+  positive
+  other
 }
 
 model ReminderNote {
@@ -67,6 +140,20 @@ model ReminderNote {
   createdAt DateTime @default(now())
   sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model ProgressUpdate {
+  id        String    @id @default(uuid())
+  taskId    String
+  senderId  String
+  text      String
+  createdAt DateTime  @default(now())
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  sender    User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  beat      TaskBeat?
 
   @@index([taskId, createdAt])
   @@index([senderId, createdAt])
@@ -90,7 +177,7 @@ model Notification {
   userId    String
   senderId  String?
   type      String
-  taskType  String?  
+  taskType  String?
   message   String
   read      Boolean  @default(false)
   metadata  Json?
@@ -186,12 +273,21 @@ model Push {
   id        String   @id @default(uuid())
   userId    String
   taskId    String
+  source    String   @default("real")
+  message   String?
   createdAt DateTime @default(now())
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, taskId])
+  @@unique([taskId, userId])
   @@index([taskId])
+  @@index([source, taskId])
+}
+
+enum TaskBeatType {
+  post
+  update
 }
 
 model FeatureFlags {

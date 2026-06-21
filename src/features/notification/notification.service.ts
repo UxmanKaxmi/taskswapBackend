@@ -1,6 +1,19 @@
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { prisma } from "../../db/client";
 import { sendPushNotification } from "../../utils/sendPushNotification";
+import { schedulePush } from "../../utils/scheduleReminderPush";
+import {
+  DEFAULT_TEST_NOTIFICATION_TEXT,
+  getCommentMentionNotificationMessage,
+  getDecisionDoneNotificationMessage,
+  getMotivationMilestoneNotificationText,
+  getMotivationPushNotificationMessage,
+  getProgressUpdateNotificationText,
+  getTaskAdviceNotificationMessage,
+  getTaskHelperNotificationMessage,
+  getTaskProgressUpdateNotificationMessage,
+  getNotificationMarkerMessage,
+} from "../../utils/notificationTextCatalog";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 
@@ -57,8 +70,9 @@ export async function markNotificationsAsRead(notificationIds: string[]) {
 // 🔔 Send a test push notification to a user
 export async function sendTestNotification(
   userId: string,
-  title: string = "Test Notification",
-  body: string = "🚀 This is a test."
+  title: string = DEFAULT_TEST_NOTIFICATION_TEXT.title,
+  body: string = DEFAULT_TEST_NOTIFICATION_TEXT.body,
+  data?: Record<string, string>
 ) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -71,7 +85,7 @@ export async function sendTestNotification(
     throw new Error("User or FCM token not found");
   }
 
-  await sendPushNotification(user.fcmToken, title, body);
+  await sendPushNotification(user.fcmToken, title, body, data);
 }
 
 // 👥 Notify helpers when invited to a task
@@ -102,7 +116,7 @@ if (!task) {
       senderId,
       type: NOTIFICATION_TYPES.TASK_HELPER,
       taskType: task.type, 
-      message: `invited you to help with`,
+      message: getTaskHelperNotificationMessage(),
       metadata: {
         taskId,
         taskText,
@@ -139,13 +153,83 @@ if (!task) {
       senderId,
       type: NOTIFICATION_TYPES.DECISION_DONE,
       taskType: task.type, // 👈 important
-      message: `marked the decision “${taskText}” as done.`,
+      message: getDecisionDoneNotificationMessage(taskText),
       metadata: {
         taskId,
         taskText,
       },
     })),
   });
+}
+
+export async function createTaskProgressUpdateNotifications({
+  recipientIds,
+  senderId,
+  taskId,
+  progressUpdateId,
+  taskText,
+  progressText,
+  taskType,
+  senderName,
+}: {
+  recipientIds: string[];
+  senderId: string;
+  taskId: string;
+  progressUpdateId: string;
+  taskText: string;
+  progressText: string;
+  taskType: string;
+  senderName: string;
+}) {
+  const uniqueRecipientIds = [...new Set(recipientIds)].filter(
+    (recipientId) => recipientId !== senderId
+  );
+
+  if (!uniqueRecipientIds.length) return;
+
+  await prisma.notification.createMany({
+    data: uniqueRecipientIds.map((recipientId) => ({
+      userId: recipientId,
+      senderId,
+      type: NOTIFICATION_TYPES.TASK_PROGRESS_UPDATE,
+      taskType,
+      message: getTaskProgressUpdateNotificationMessage(senderName),
+      metadata: {
+        taskId,
+        taskText,
+        progressText,
+        progressUpdateId,
+      },
+    })),
+  });
+
+  const recipients = await prisma.user.findMany({
+    where: {
+      id: { in: uniqueRecipientIds },
+      fcmToken: { not: null },
+    },
+    select: {
+      id: true,
+      fcmToken: true,
+    },
+  });
+
+  const { title, body } = getProgressUpdateNotificationText(taskText, senderName);
+
+  await Promise.all(
+    recipients.map((recipient) =>
+      recipient.fcmToken
+        ? schedulePush(0, recipient.fcmToken, title, body, {
+            notificationType: NOTIFICATION_TYPES.TASK_PROGRESS_UPDATE,
+            taskId,
+            taskType,
+            progressUpdateId,
+            deeplinkPath: `/tasks/${taskId}`,
+            screen: "TaskDetail",
+          })
+        : undefined
+    )
+  );
 }
 
 export async function sendTestDecisionDoneNotification(userId: string) {
@@ -165,7 +249,7 @@ export async function sendTestDecisionDoneNotification(userId: string) {
       userId,
       senderId: userId,
       type: NOTIFICATION_TYPES.DECISION_DONE,
-      message: `marked the decision “Test Decision” as done.`,
+      message: getDecisionDoneNotificationMessage("Test Decision"),
       metadata: {
         taskId: "demo-task-id",
         taskText: "Test Decision",
@@ -211,7 +295,7 @@ export async function createTaskAdviceNotification(
       senderId,
       type: NOTIFICATION_TYPES.TASK_ADVICE,
       taskType: task.type,
-      message: "gave advice on your task",
+      message: getTaskAdviceNotificationMessage(),
       metadata: {
         taskId,
         taskText: task.text,
@@ -254,7 +338,7 @@ export async function createCommentMentionNotifications(
       senderId,
       type: NOTIFICATION_TYPES.COMMENT,
       taskType: task.type,
-      message: "mentioned you in a comment",
+      message: getCommentMentionNotificationMessage(),
       metadata: {
         taskId,
         commentId,
@@ -290,7 +374,7 @@ export async function createMotivationPushNotification({
       senderId: pushedByUserId,
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_PUSH,
       taskType: task.type,
-      message: "pushed your motivation 💪",
+      message: getMotivationPushNotificationMessage(),
       metadata: {
         taskId,
         taskText: task.text,
@@ -349,11 +433,16 @@ export async function createMotivationMilestoneNotification({
   });
 
   if (user?.fcmToken) {
-    await sendPushNotification(
-      user.fcmToken,
-      "🔥 Motivation milestone!",
-      `Your motivation just reached ${pushCount} pushes`
-    );
+    const { title, body } = getMotivationMilestoneNotificationText(pushCount);
+
+    await sendPushNotification(user.fcmToken, title, body, {
+      notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE,
+      taskId,
+      taskType: task.type,
+      pushCount: String(pushCount),
+      deeplinkPath: `/tasks/${taskId}`,
+      screen: "TaskDetail",
+    });
   }
 
   // 🧠 Save internal marker so we don’t resend
@@ -362,7 +451,7 @@ export async function createMotivationMilestoneNotification({
       userId: taskOwnerId,
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE_SENT,
       taskType: task.type,
-      message: "milestone push sent",
+      message: getNotificationMarkerMessage(),
       read: true, // internal marker; never show as unread
       metadata: {
         taskId,

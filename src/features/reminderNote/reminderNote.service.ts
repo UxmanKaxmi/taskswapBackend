@@ -3,6 +3,10 @@ import { prisma } from "../../db/client";
 import { BadRequestError } from "../../errors";
 import { ReminderNoteDTO, SendReminderNoteInput } from "./reminderNote.types";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
+import {
+  getReminderNoteNotificationText,
+  getReminderReceivedNotificationMessage,
+} from "../../utils/notificationTextCatalog";
 
 export async function sendReminderNote({
   taskId,
@@ -29,10 +33,18 @@ export async function sendReminderNote({
 
   // Notify task owner via push
   if (task.user?.fcmToken) {
+    const { title, body } = getReminderNoteNotificationText(message);
     await sendPushNotification(
       task.user.fcmToken,
-      "⏰ You got a reminder!",
-      message
+      title,
+      body,
+      {
+        notificationType: "reminder",
+        taskId,
+        taskType: task.type,
+        screen: "TaskDetail",
+        deeplinkPath: `/tasks/${taskId}`,
+      }
     );
   }
 
@@ -61,7 +73,7 @@ export async function sendReminderNote({
       senderId,
       type: NOTIFICATION_TYPES.REMINDER,
       taskType: task.type,
-      message: `${sender?.name ?? "Someone"} reminded you about your task.`,
+      message: getReminderReceivedNotificationMessage(sender?.name ?? "Someone"),
       metadata: {
         taskId,
         senderId,

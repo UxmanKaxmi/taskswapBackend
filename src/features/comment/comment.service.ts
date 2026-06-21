@@ -6,6 +6,7 @@ import {
   createTaskAdviceNotification,
 } from "../notification/notification.service";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
+import { getCommentMentionPushText } from "../../utils/notificationTextCatalog";
 
 export async function createComment(input: CreateCommentInput) {
   return prisma.$transaction(async (tx) => {
@@ -44,17 +45,19 @@ export async function createComment(input: CreateCommentInput) {
         where: { id: { in: mentionedIds } },
         select: { fcmToken: true },
       });
+      const commentMentionPushText = getCommentMentionPushText(input.text);
 
       await Promise.all(
         recipients
           .filter((u) => !!u.fcmToken)
           .map((u) =>
-            schedulePush(
-              0,
-              u.fcmToken!,
-              "💬 You were mentioned",
-              `${input.text.slice(0, 50)}...`
-            )
+            schedulePush(0, u.fcmToken!, commentMentionPushText.title, commentMentionPushText.body, {
+              notificationType: "comment",
+              taskId: input.taskId,
+              commentId: comment.id,
+              screen: "TaskDetail",
+              deeplinkPath: `/tasks/${input.taskId}`,
+            })
           )
       );
     }

@@ -8,15 +8,24 @@ import {
   MotivationTaskType,
   TaskType,
   GetAllTasksHelpers,
+  FeedSort,
   AdviceTaskType,
   FeelingTag,
 } from "./task.types";
 import { HttpStatus } from "../../types/httpStatus";
 import { schedulePush } from "../../utils/scheduleReminderPush";
 import {
+  getDecisionFinalizedNotificationText,
+  getHelperNotificationText,
+  getTaskReminderPushNotificationText,
+} from "../../utils/notificationTextCatalog";
+import {
   createTaskHelperNotifications,
   createDecisionTaskDoneNotifications,
+  createTaskProgressUpdateNotifications,
 } from "../notification/notification.service";
+import { scheduleSeededPushesForTask } from "../seededPush/seededPush.service";
+import { getTaskCheerSummaryForTask } from "../cheer/cheer.service";
 
 type FeedTask = {
   id: string;
@@ -50,6 +59,22 @@ type FeedTask = {
   Push?: { id: string }[];
 };
 
+type TaskProgressUpdateSummary = {
+  text: string;
+  createdAt: string;
+};
+
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+type TaskPushHistoryItem = {
+  createdAt: Date;
+  user: {
+    id: string;
+    name: string;
+    photo: string | null;
+  };
+};
+
 /* -------------------------------------------------------
    INTERNAL UTILS
 --------------------------------------------------------- */
@@ -71,6 +96,17 @@ function validateDecisionOptions(options?: string[]) {
       HttpStatus.BAD_REQUEST
     );
   }
+}
+
+function toProgressUpdateSummary(
+  progressUpdate: { text: string; createdAt: Date } | null | undefined
+): TaskProgressUpdateSummary | null {
+  if (!progressUpdate) return null;
+
+  return {
+    text: progressUpdate.text,
+    createdAt: progressUpdate.createdAt.toISOString(),
+  };
 }
 
 
@@ -201,6 +237,133 @@ type PaginatedTaskResult = {
   hasMore: boolean;
 };
 
+const FEED_SORTS = new Set<FeedSort>(["all", "needs_push", "new", "almost_there"]);
+
+type FeedCursorRow = {
+  id: string;
+  created_at: Date;
+  push_count: number;
+  latest_activity_at: Date;
+};
+
+function normalizeFeedSort(sort?: string): FeedSort {
+  return sort && FEED_SORTS.has(sort as FeedSort) ? (sort as FeedSort) : "needs_push";
+}
+
+function getFeedCursorCondition(sort: FeedSort, cursor?: FeedCursorRow | null) {
+  if (!cursor) return Prisma.empty;
+
+  switch (sort) {
+    case "all":
+    case "new":
+      return Prisma.sql`
+        AND (
+          t."createdAt" < ${cursor.created_at}
+          OR (t."createdAt" = ${cursor.created_at} AND t.id < ${cursor.id})
+        )
+      `;
+    case "almost_there":
+      return Prisma.sql`
+        AND (
+          t."latestActivityAt" < ${cursor.latest_activity_at}
+          OR (t."latestActivityAt" = ${cursor.latest_activity_at} AND t.id < ${cursor.id})
+        )
+      `;
+    case "needs_push":
+    default:
+      return Prisma.sql`
+        AND (
+          t."pushCount" > ${cursor.push_count}
+          OR (t."pushCount" = ${cursor.push_count} AND t."createdAt" < ${cursor.created_at})
+          OR (
+            t."pushCount" = ${cursor.push_count}
+            AND t."createdAt" = ${cursor.created_at}
+            AND t.id < ${cursor.id}
+          )
+        )
+      `;
+  }
+}
+
+function getFeedOrderBy(sort: FeedSort) {
+  switch (sort) {
+    case "all":
+    case "new":
+      return Prisma.sql`t."createdAt" DESC, t.id DESC`;
+    case "almost_there":
+      return Prisma.sql`t."latestActivityAt" DESC, t.id DESC`;
+    case "needs_push":
+    default:
+      return Prisma.sql`t."pushCount" ASC, t."createdAt" DESC, t.id DESC`;
+  }
+}
+
+async function getFeedCursorRow(
+  cursorId: string | undefined,
+  excludeUserId?: string | null
+): Promise<FeedCursorRow | null> {
+  if (!cursorId) return null;
+
+  const excludeSelfCondition = excludeUserId
+    ? Prisma.sql`AND t."userId" <> ${excludeUserId}`
+    : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<FeedCursorRow[]>`
+    SELECT
+      t.id,
+      t."createdAt" AS created_at,
+      t."pushCount" AS push_count,
+      t."latestActivityAt" AS latest_activity_at
+    FROM "Task" t
+    WHERE
+      t.id = ${cursorId}
+      AND t."isPublic" = true
+      AND t.type = 'motivation'
+      AND t.completed = false
+      AND t."completedAt" IS NULL
+      ${excludeSelfCondition}
+    LIMIT 1
+  `;
+
+  return rows[0] ?? null;
+}
+
+async function getOrderedFeedTaskIds({
+  sort,
+  limit,
+  cursorId,
+  excludeUserId,
+}: {
+  sort: FeedSort;
+  limit: number;
+  cursorId?: string;
+  excludeUserId?: string | null;
+}) {
+  const excludeSelfCondition = excludeUserId
+    ? Prisma.sql`AND t."userId" <> ${excludeUserId}`
+    : Prisma.empty;
+  const almostThereCondition =
+    sort === "almost_there" ? Prisma.sql`AND t."isAlmostThere" = true` : Prisma.empty;
+  const cursor = await getFeedCursorRow(cursorId, excludeUserId);
+  const cursorCondition = getFeedCursorCondition(sort, cursor);
+  const orderBy = getFeedOrderBy(sort);
+
+  return prisma.$queryRaw<{ id: string }[]>`
+    SELECT t.id
+    FROM "Task" t
+    WHERE
+      t."isPublic" = true
+      AND t.type = 'motivation'
+      AND t.completed = false
+      AND t."completedAt" IS NULL
+      ${almostThereCondition}
+      ${excludeSelfCondition}
+      ${cursorCondition}
+    ORDER BY ${orderBy}
+    LIMIT ${limit}
+  `;
+}
+
 /* -------------------------------------------------------
    CREATE TASK (auth required)
 --------------------------------------------------------- */
@@ -243,21 +406,33 @@ const options =
       ? { connect: input.helpers.map((id) => ({ id })) }
       : undefined;
 
-  const createdTask = await prisma.task.create({
-    data: {
-      text,
-      type,
-      userId,
-      isPublic: true,
-      avatar,
-      name,
-      feeling: input.feeling ?? null,
-      remindAt,
-      options,
-      deliverAt,
-      helpers,
-    },
-    include: { helpers: true },
+  const createdTask = await prisma.$transaction(async (tx) => {
+    const task = await tx.task.create({
+      data: {
+        text,
+        type,
+        userId,
+        isPublic: true,
+        avatar,
+        name,
+        feeling: input.feeling ?? null,
+        remindAt,
+        options,
+        deliverAt,
+        helpers,
+      },
+      include: { helpers: true },
+    });
+
+    await tx.taskBeat.create({
+      data: {
+        taskId: task.id,
+        type: "post",
+        createdAt: task.createdAt,
+      },
+    });
+
+    return task;
   });
 
   /* ---------------------------
@@ -266,7 +441,14 @@ const options =
   if (type === "reminder" && remindAt && user.fcmToken) {
     const delayMs = new Date(remindAt).getTime() - Date.now();
     if (delayMs > 0) {
-      schedulePush(delayMs, user.fcmToken, "⏰ Reminder", `It's time: "${text}"`);
+      const { title, body } = getTaskReminderPushNotificationText(text);
+      schedulePush(delayMs, user.fcmToken, title, body, {
+        notificationType: "reminder",
+        taskId: createdTask.id,
+        taskType: "reminder",
+        deeplinkPath: `/tasks/${createdTask.id}`,
+        screen: "TaskDetail",
+      });
     }
   }
 
@@ -278,18 +460,24 @@ const options =
       where: { id: { in: input.helpers } },
       select: { id: true, fcmToken: true },
     });
-
-    const bodyMap: Record<TaskType, string> = {
-      reminder: `You were asked to help with a reminder: “${text}”`,
-      advice: `Someone needs your advice: “${text}”`,
-      motivation: `You were asked to motivate someone: “${text}”`,
-      decision: `Someone needs your input: “${text}”`,
-    };
+    const helperNotificationText = getHelperNotificationText(type, text);
 
     await Promise.all(
       helperUsers.map((helper) =>
         helper.fcmToken
-          ? schedulePush(0, helper.fcmToken, "🤝 Someone asked for your help", bodyMap[type])
+          ? schedulePush(
+              0,
+              helper.fcmToken,
+              helperNotificationText.title,
+              helperNotificationText.body,
+              {
+                notificationType: "task-helper",
+                taskId: createdTask.id,
+                taskType: type,
+                deeplinkPath: `/tasks/${createdTask.id}`,
+                screen: "TaskDetail",
+              }
+            )
           : undefined
       )
     );
@@ -301,6 +489,11 @@ const options =
       taskText: text,
     });
   }
+
+  /* ---------------------------
+     Schedule seeded launch pushes
+  ----------------------------- */
+  await scheduleSeededPushesForTask(createdTask.id);
 
   return createdTask;
 }
@@ -368,29 +561,36 @@ export async function getTaskById(taskId: string, userId?: string | null) {
   // ---------------------------------
   // Fetch task with relations
   // ---------------------------------
-const task = await prisma.task.findUnique({
-  where: { id: taskId },
-  include: {
-    helpers: { select: { id: true, name: true, photo: true } },
-    Vote: {
-      include: {
-        user: { select: { id: true, name: true, photo: true } },
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      helpers: { select: { id: true, name: true, photo: true } },
+      progressUpdates: {
+        orderBy: { createdAt: "desc" },
+        select: {
+          text: true,
+          createdAt: true,
+        },
       },
-    },
-    _count: { select: { Push: true } },
-    Push: userId
-      ? {
-          orderBy: { createdAt: "desc" },
-          select: {
-            createdAt: true,
-            user: {
-              select: { id: true, name: true, photo: true },
+      Vote: {
+        include: {
+          user: { select: { id: true, name: true, photo: true } },
+        },
+      },
+      _count: { select: { Push: true } },
+      Push: userId
+        ? {
+            orderBy: { createdAt: "desc" },
+            select: {
+              createdAt: true,
+              user: {
+                select: { id: true, name: true, photo: true },
+              },
             },
-          },
-        }
-      : false,
-  },
-});
+          }
+        : false,
+    },
+  });
 
   if (!task || !task.isPublic) {
     throw new AppError("Task not found", HttpStatus.NOT_FOUND);
@@ -424,69 +624,96 @@ const task = await prisma.task.findUnique({
     ? task.Vote.find((v) => v.userId === userId)?.option ?? null
     : null;
 
-    const hasVoted = userId ? votedOption !== null : false;
-  const { Vote, ...taskData } = task;
+  const hasVoted = userId ? votedOption !== null : false;
+  const { Vote, progressUpdates, Push, ...taskData } = task;
+  const progressUpdateHistory = progressUpdates
+    .map((entry) => toProgressUpdateSummary(entry))
+    .filter((entry): entry is TaskProgressUpdateSummary => entry !== null);
 
   // ---------------------------------
   // Include viewCount in response
   // ---------------------------------
 
+  let hasAdvised = false;
 
-let hasAdvised = false;
+  if (userId && task.type === "advice") {
+    const advice = await prisma.comment.findFirst({
+      where: {
+        taskId,
+        userId,
+      },
+      select: { id: true },
+    });
 
-if (userId && task.type === "advice") {
-  const advice = await prisma.comment.findFirst({
-    where: {
-      taskId,
-      userId,
-    },
-    select: { id: true },
-  });
+    hasAdvised = !!advice;
+  }
 
-  hasAdvised = !!advice;
-}
+  let hasReminded = false;
 
-let hasReminded = false;
+  if (userId) {
+    const reminder = await prisma.reminderNote.findFirst({
+      where: {
+        taskId,
+        senderId: userId,
+      },
+      select: { id: true },
+    });
 
-if (userId) {
-  const reminder = await prisma.reminderNote.findFirst({
-    where: {
-      taskId,
-      senderId: userId,
-    },
-    select: { id: true },
-  });
+    hasReminded = !!reminder;
+  }
 
-  hasReminded = !!reminder;
-}
-
-const pushItems = Array.isArray((task as { Push?: any[] }).Push)
-  ? (task as { Push: any[] }).Push
-  : [];
-
-const pushHistory =
-  task.type === "motivation"
-    ? pushItems.map((p) => ({
-        user: p.user,
-        pushedAt: p.createdAt,
-      }))
+  const pushItems = Array.isArray(Push)
+    ? (Push as unknown as TaskPushHistoryItem[])
     : [];
+  const visiblePushItems = pushItems.filter((p) => p.user.id !== task.userId);
+  const pushCount =
+    task.type === "motivation"
+      ? await prisma.push.count({
+          where: {
+            taskId,
+            userId: { not: task.userId },
+          },
+        })
+      : 0;
+
+  const pushHistory =
+    task.type === "motivation"
+      ? visiblePushItems.map((p) => ({
+          user: p.user,
+          pushedAt: p.createdAt,
+        }))
+      : [];
+  const cheerSummary =
+    task.type === "motivation"
+      ? await getTaskCheerSummaryForTask(taskId, userId)
+      : {
+          beats: [],
+          cheerTotal: 0,
+          distinctCheererCount: 0,
+          sampleCheerers: [],
+          mostCheeredBeatId: null,
+        };
 
   return {
     ...taskData,
     votes,
     votedOption,
-    viewCount: task.viewCount, // 👈 ADD THIS
-    hasVoted, // 👈 ADD THIS
-
-    pushCount: task.type === "motivation" ? task._count.Push : 0,
+    viewCount: task.viewCount,
+    hasVoted,
+    pushCount,
     hasPushed:
-      userId && task.type === "motivation" ? pushItems.length > 0 : false,
-    pushHistory, // 👈 ADD THIS
-
+      userId && task.type === "motivation"
+        ? visiblePushItems.some((p) => p.user.id === userId)
+        : false,
+    pushHistory,
+    beats: cheerSummary.beats,
+    cheerTotal: cheerSummary.cheerTotal,
+    distinctCheererCount: cheerSummary.distinctCheererCount,
+    sampleCheerers: cheerSummary.sampleCheerers,
+    mostCheeredBeatId: cheerSummary.mostCheeredBeatId,
     hasAdvised,
     hasReminded,
-
+    progressUpdates: progressUpdateHistory,
   };
 }
 
@@ -498,21 +725,34 @@ export async function getAllTasks(
   userId?: string | null,
   helpers?: GetAllTasksHelpers
 ): Promise<PaginatedTaskResult> {
-  /* ---------------------------------------------
-     Always show public feed (optional excludeSelf)
-  ----------------------------------------------- */
-  let where: Prisma.TaskWhereInput = { isPublic: true };
-  if (helpers?.excludeSelf && userId) {
-    where = { ...where, userId: { not: userId } };
-  }
-
   const requestedLimit = helpers?.limit ?? 20;
   const normalizedLimit = Math.max(1, Math.min(requestedLimit, 50));
   const fetchLimit = normalizedLimit + 1;
-
+  const sort = normalizeFeedSort(helpers?.sort);
   const cursorId = helpers?.cursor?.trim();
-  const findArgs: Prisma.TaskFindManyArgs = {
-    where,
+  const excludeUserId = helpers?.excludeSelf && userId ? userId : null;
+  const orderedIds = await getOrderedFeedTaskIds({
+    sort,
+    limit: fetchLimit,
+    cursorId,
+    excludeUserId,
+  });
+
+  const hasMore = orderedIds.length === fetchLimit;
+  const trimmedIds = hasMore ? orderedIds.slice(0, normalizedLimit) : orderedIds;
+  const taskIds = trimmedIds.map((row) => row.id);
+  const lastTaskId = taskIds[taskIds.length - 1] ?? null;
+
+  if (taskIds.length === 0) {
+    return {
+      tasks: [],
+      hasMore: false,
+      nextCursor: null,
+    };
+  }
+
+  const tasks = await prisma.task.findMany({
+    where: { id: { in: taskIds } },
     include: {
       helpers: { select: { id: true, name: true, email: true, photo: true } },
       _count: {
@@ -531,26 +771,18 @@ export async function getAllTasks(
           }
         : false,
     },
-    orderBy: { createdAt: "desc" },
-    take: fetchLimit,
-  };
+  });
 
-  if (cursorId) {
-    findArgs.cursor = { id: cursorId };
-    findArgs.skip = 1;
-  }
-
-  const tasks = await prisma.task.findMany(findArgs);
-
-  const hasMore = tasks.length === fetchLimit;
-  const trimmed = hasMore ? tasks.slice(0, normalizedLimit) : tasks;
-  const lastTask = trimmed[trimmed.length - 1];
-  const paginatedTasks = await transformTasksForFeed(trimmed as FeedTask[], userId);
+  const taskOrder = new Map(taskIds.map((id, index) => [id, index]));
+  const sortedTasks = tasks.sort((a, b) => {
+    return (taskOrder.get(a.id) ?? 0) - (taskOrder.get(b.id) ?? 0);
+  });
+  const paginatedTasks = await transformTasksForFeed(sortedTasks as FeedTask[], userId);
 
   return {
     tasks: paginatedTasks,
     hasMore,
-    nextCursor: hasMore && lastTask ? lastTask.id : null,
+    nextCursor: hasMore ? lastTaskId : null,
   };
 }
 
@@ -614,6 +846,7 @@ export async function markTaskAsDone(taskId: string, userId: string) {
       where: { id: { in: helperIds } },
       select: { fcmToken: true },
     });
+    const decisionFinalizedNotificationText = getDecisionFinalizedNotificationText();
 
     await Promise.all(
       helpers.map((h) =>
@@ -621,8 +854,15 @@ export async function markTaskAsDone(taskId: string, userId: string) {
           ? schedulePush(
               0,
               h.fcmToken,
-              "✅ Decision Finalized",
-              `A decision you helped with is complete.`
+              decisionFinalizedNotificationText.title,
+              decisionFinalizedNotificationText.body,
+              {
+                notificationType: "decision-done",
+                taskId: task.id,
+                taskType: "decision",
+                deeplinkPath: `/tasks/${task.id}`,
+                screen: "TaskDetail",
+              }
             )
           : undefined
       )
@@ -653,6 +893,125 @@ export async function markTaskAsNotDone(taskId: string, userId: string) {
     where: { id: taskId },
     data: { completed: false, completedAt: null },
   });
+}
+
+export async function shareTaskProgress(
+  taskId: string,
+  senderId: string,
+  text: string
+): Promise<TaskProgressUpdateSummary> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true,
+      userId: true,
+      type: true,
+      text: true,
+      name: true,
+      completed: true,
+      Push: {
+        select: { userId: true },
+      },
+      helpers: {
+        select: { id: true },
+      },
+      progressUpdates: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  if (!task) {
+    throw new AppError("Task not found.", HttpStatus.NOT_FOUND);
+  }
+
+  if (task.type !== "motivation") {
+    throw new AppError(
+      "Progress updates are only available for motivation tasks.",
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  if (task.completed) {
+    throw new AppError(
+      "Completed tasks cannot receive progress updates.",
+      HttpStatus.CONFLICT
+    );
+  }
+
+  if (task.userId !== senderId) {
+    throw new AppError(
+      "You can only share progress on your own task.",
+      HttpStatus.FORBIDDEN
+    );
+  }
+
+  const latestProgressUpdate = task.progressUpdates[0];
+  if (latestProgressUpdate) {
+    const elapsedMs = Date.now() - latestProgressUpdate.createdAt.getTime();
+    if (elapsedMs < SIX_HOURS_MS) {
+      const remainingHours = Math.ceil(
+        (SIX_HOURS_MS - elapsedMs) / (60 * 60 * 1000)
+      );
+      throw new AppError(
+        `You can only share a progress update every 6 hours. Try again in about ${remainingHours} hour${
+          remainingHours === 1 ? "" : "s"
+        }.`,
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+  }
+
+  const senderName = task.name.trim() || "Someone";
+  const recipientIds = [
+    ...new Set([
+      ...task.Push.map((push) => push.userId),
+      ...task.helpers.map((helper) => helper.id),
+    ]),
+  ].filter((recipientId) => recipientId !== senderId);
+
+  const progressUpdate = await prisma.$transaction(async (tx) => {
+    const update = await tx.progressUpdate.create({
+      data: {
+        taskId,
+        senderId,
+        text,
+      },
+    });
+
+    await tx.taskBeat.create({
+      data: {
+        taskId,
+        type: "update",
+        updateId: update.id,
+        createdAt: update.createdAt,
+      },
+    });
+
+    await tx.task.update({
+      where: { id: taskId },
+      data: { latestActivityAt: update.createdAt },
+    });
+
+    return update;
+  });
+
+  await createTaskProgressUpdateNotifications({
+    recipientIds,
+    senderId,
+    taskId,
+    progressUpdateId: progressUpdate.id,
+    taskText: task.text,
+    progressText: text,
+    taskType: task.type,
+    senderName,
+  });
+
+  return toProgressUpdateSummary(progressUpdate)!;
 }
 
 

@@ -8,11 +8,16 @@ import {
   increaseTaskViewCount,
   markTaskAsDone,
   markTaskAsNotDone,
+  shareTaskProgress,
   updateTask,
 } from "./task.service";
 import { BadRequestError } from "../../errors";
-import { CreateTaskInput } from "./task.types";
-import { taskSchema, taskUpdateSchema } from "./task.schema";
+import { CreateTaskInput, FeedSort } from "./task.types";
+import {
+  taskProgressUpdateSchema,
+  taskSchema,
+  taskUpdateSchema,
+} from "./task.schema";
 import { ZodError } from "zod";
 import { getParamString } from "../../utils/params";
 
@@ -118,11 +123,16 @@ export async function handleGetTasks(
         : undefined;
 
     const excludeSelf = req.query.excludeSelf === "true";
+    const sort =
+      typeof req.query.sort === "string" && req.query.sort.trim().length > 0
+        ? req.query.sort.trim()
+        : undefined;
 
     const paginated = await getAllTasks(userId, {
       limit,
       cursor: cursorQuery,
       excludeSelf,
+      sort: sort as FeedSort | undefined,
     });
 
     res.status(200).json({
@@ -162,10 +172,11 @@ export async function handleGetTaskById(
 
     // ❌ Your old version did NOT return after sending 404 → bug
     if (!task) {
-       res.status(404).json({ error: "Task not found" });
+      res.status(404).json({ error: "Task not found" });
+      return;
     }
 
-     res.status(200).json(task);
+    res.status(200).json(task);
   } catch (error) {
     console.error("[TASK_FETCH_BY_ID_ERROR]", error);
     next(error);
@@ -253,6 +264,44 @@ export async function handleMarkTaskNotDone(
   }
 }
 
+/* -------------------------------------------------------
+   SHARE PROGRESS UPDATE (AUTH REQUIRED)
+---------------------------------------------------------*/
+export async function handleShareTaskProgress(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const taskId = getParamString(req.params.id);
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return next(new BadRequestError("User ID is required"));
+  }
+  if (!taskId) {
+    return next(new BadRequestError("Task ID is required"));
+  }
+
+  try {
+    const parsed = taskProgressUpdateSchema.parse(req.body);
+    const progressUpdate = await shareTaskProgress(taskId, userId, parsed.text);
+    res.status(201).json({
+      progressUpdates: [progressUpdate],
+    });
+  } catch (error) {
+    console.error("[TASK_PROGRESS_UPDATE_ERROR]", error);
+
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: "Validation error",
+        issues: error.errors,
+      });
+    }
+
+    next(error);
+  }
+}
+
 
 
 export async function handleGetTaskViewCount(
@@ -270,7 +319,8 @@ export async function handleGetTaskViewCount(
     const viewCount = await getTaskViewCount(id);
 
     if (viewCount === null) {
-       res.status(404).json({ error: "Task not found" });
+      res.status(404).json({ error: "Task not found" });
+      return;
     }
 
     res.json({ viewCount });

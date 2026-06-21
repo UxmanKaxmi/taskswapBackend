@@ -1,4 +1,5 @@
 export type TaskType = "reminder" | "advice" | "decision" | "motivation";
+export type FeedSort = "all" | "needs_push" | "new" | "almost_there";
 
 export const FEELING_TAGS = [
   "stuck",
@@ -82,4 +83,5 @@ export type GetAllTasksHelpers = {
   excludeSelf?: boolean; // If true, don't include user's own tasks
   limit?: number; // Limit number of tasks returned
   cursor?: string; // Cursor pointing to the last-seen task
+  sort?: FeedSort;
 };
