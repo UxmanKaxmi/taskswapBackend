@@ -5,7 +5,7 @@ export function schedulePush(
   token: string,
   title: string,
   body: string,
-  data?: Record<string, string | number | boolean | null | undefined>
+  data?: Record<string, string>
 ) {
   setTimeout(async () => {
     try {

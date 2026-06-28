@@ -1,4 +1,16 @@
 export type TaskType = "reminder" | "advice" | "decision" | "motivation";
+export type FeedSort = "all" | "needs_push" | "new" | "almost_there";
+
+export const FEELING_TAGS = [
+  "stuck",
+  "nervous",
+  "tired",
+  "avoiding_it",
+  "overwhelmed",
+  "almost_there",
+] as const;
+
+export type FeelingTag = (typeof FEELING_TAGS)[number];
 
 /**
  * Shared fields across all task types.
@@ -8,6 +20,7 @@ interface TaskBase {
   userId: string;
   avatar?: string;
   name?: string;
+  feeling?: FeelingTag | null;
 }
 
 /**
@@ -70,4 +83,5 @@ export type GetAllTasksHelpers = {
   excludeSelf?: boolean; // If true, don't include user's own tasks
   limit?: number; // Limit number of tasks returned
   cursor?: string; // Cursor pointing to the last-seen task
+  sort?: FeedSort;
 };

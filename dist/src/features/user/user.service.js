@@ -1,6 +1,5 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHomeSummaryForUser = getHomeSummaryForUser;
 exports.syncUserToDB = syncUserToDB;
 exports.getMutualFriends = getMutualFriends;
 exports.matchUsersByEmail = matchUsersByEmail;
@@ -12,288 +11,18 @@ exports.getFollowersCount = getFollowersCount;
 exports.getFollowingCount = getFollowingCount;
 exports.getTaskStatsForUser = getTaskStatsForUser;
 exports.searchFriendsService = searchFriendsService;
-exports.getPublicProfileStatsForUser = getPublicProfileStatsForUser;
+exports.getHomeSummaryForUser = getHomeSummaryForUser;
 exports.getUserProfileById = getUserProfileById;
 const client_1 = require("../../db/client");
 const AppError_1 = require("../../errors/AppError");
 const httpStatus_1 = require("../../types/httpStatus");
 const task_service_1 = require("../task/task.service");
-const seededUser_service_1 = require("../seededUser/seededUser.service");
-const user_serializers_1 = require("./user.serializers");
-function toPhoto(photo) {
-    return photo && photo.trim() ? photo : null;
-}
-function buildEntity(task) {
-    return {
-        type: "task",
-        taskId: task.id,
-        taskType: task.type,
-        taskText: task.text,
-        ownerId: task.userId,
-        ownerName: task.name,
-        ownerPhoto: toPhoto(task.avatar),
-    };
-}
-function buildSuccessStoryModule(task, contributedAt, resultAt) {
-    return {
-        id: `success_story:${task.id}`,
-        type: "success_story",
-        title: "Success story",
-        body: `${task.name} finished this goal after your push.`,
-        ctaLabel: "View update",
-        entity: buildEntity(task),
-        timestamps: {
-            contributedAt: contributedAt.toISOString(),
-            resultAt: resultAt.toISOString(),
-        },
-    };
-}
-function buildNeedsYourPushModule(task) {
-    return {
-        id: `needs_your_push:${task.id}`,
-        type: "needs_your_push",
-        title: "Needs your push",
-        body: `${task.name} needs a push right now.`,
-        ctaLabel: "Send push",
-        entity: buildEntity(task),
-        stats: {
-            pushCount: (task.Push ?? []).length,
-        },
-    };
-}
-function buildUpdateProgressModule(task, pushCount, lastPushAt) {
-    return {
-        id: `update_progress:${task.id}`,
-        type: "update_progress",
-        title: "Update your progress",
-        body: `${pushCount} friend${pushCount === 1 ? "" : "s"} pushed you.`,
-        ctaLabel: "Update progress",
-        entity: buildEntity(task),
-        stats: {
-            pushCount,
-            lastPushAt: lastPushAt ? lastPushAt.toISOString() : null,
-        },
-    };
-}
-function buildAdviceRequestModule(task, helperCount, lastHelperAt) {
-    return {
-        id: `advice_request:${task.id}`,
-        type: "advice_request_waiting_on_you",
-        title: "Advice request waiting on you",
-        body: `${task.name} needs your advice.`,
-        ctaLabel: "Give advice",
-        entity: buildEntity(task),
-        stats: {
-            helperCount,
-            lastHelperAt: lastHelperAt ? lastHelperAt.toISOString() : null,
-        },
-        question: task.text,
-    };
-}
-async function getHomeSummaryForUser(userId) {
-    const [user, followingRows] = await Promise.all([
-        client_1.prisma.user.findUnique({
-            where: { id: userId },
-            select: { id: true },
-        }),
-        client_1.prisma.follow.findMany({
-            where: { followerId: userId },
-            select: { followingId: true },
-        }),
-    ]);
-    if (!user) {
-        throw new AppError_1.AppError("User not found", httpStatus_1.HttpStatus.NOT_FOUND);
-    }
-    const followedUserIds = followingRows.map((row) => row.followingId);
-    const [successStoryTasks, followedMotivationTasks, ownMotivationTasks, adviceTasks] = await Promise.all([
-        client_1.prisma.task.findMany({
-            where: {
-                type: "motivation",
-                completed: true,
-                completedAt: { not: null },
-                userId: { not: userId },
-                Push: {
-                    some: { userId },
-                },
-            },
-            orderBy: { completedAt: "desc" },
-            take: 25,
-            select: {
-                id: true,
-                text: true,
-                type: true,
-                userId: true,
-                name: true,
-                avatar: true,
-                createdAt: true,
-                completedAt: true,
-                Push: {
-                    where: { userId },
-                    orderBy: { createdAt: "desc" },
-                    take: 1,
-                    select: { createdAt: true, userId: true },
-                },
-            },
-        }),
-        followedUserIds.length
-            ? client_1.prisma.task.findMany({
-                where: {
-                    type: "motivation",
-                    completed: false,
-                    userId: { in: followedUserIds },
-                },
-                orderBy: { createdAt: "desc" },
-                take: 25,
-                select: {
-                    id: true,
-                    text: true,
-                    type: true,
-                    userId: true,
-                    name: true,
-                    avatar: true,
-                    createdAt: true,
-                    completedAt: true,
-                    Push: {
-                        where: { userId },
-                        select: { createdAt: true, userId: true },
-                    },
-                },
-            })
-            : Promise.resolve([]),
-        client_1.prisma.task.findMany({
-            where: {
-                type: "motivation",
-                completed: false,
-                userId,
-            },
-            orderBy: { createdAt: "desc" },
-            take: 25,
-            select: {
-                id: true,
-                text: true,
-                type: true,
-                userId: true,
-                name: true,
-                avatar: true,
-                createdAt: true,
-                completedAt: true,
-                Push: {
-                    orderBy: { createdAt: "desc" },
-                    select: { createdAt: true, userId: true },
-                },
-            },
-        }),
-        client_1.prisma.task.findMany({
-            where: {
-                type: "advice",
-                completed: false,
-                helpers: {
-                    some: { id: userId },
-                },
-            },
-            orderBy: { createdAt: "desc" },
-            take: 25,
-            select: {
-                id: true,
-                text: true,
-                type: true,
-                userId: true,
-                name: true,
-                avatar: true,
-                createdAt: true,
-                completedAt: true,
-                helpers: {
-                    select: {
-                        id: true,
-                        name: true,
-                        photo: true,
-                    },
-                },
-            },
-        }),
-    ]);
-    const successStoryTask = successStoryTasks.find((task) => {
-        const pushedAt = task.Push?.[0]?.createdAt;
-        return !!task.completedAt && !!pushedAt && pushedAt <= task.completedAt;
-    });
-    const needsYourPushTask = followedMotivationTasks.find((task) => (task.Push ?? []).length === 0);
-    const updateProgressTask = ownMotivationTasks
-        .map((task) => {
-        const otherPushes = (task.Push ?? []).filter((push) => push.userId !== userId);
-        return {
-            task,
-            otherPushes,
-            pushCount: otherPushes.length,
-            lastPushAt: otherPushes[0]?.createdAt ?? null,
-        };
-    })
-        .filter((item) => item.pushCount > 0)
-        .sort((a, b) => {
-        if (b.pushCount !== a.pushCount)
-            return b.pushCount - a.pushCount;
-        return (b.lastPushAt?.getTime() ?? 0) - (a.lastPushAt?.getTime() ?? 0);
-    })[0];
-    const advisedComments = adviceTasks.length
-        ? await client_1.prisma.comment.findMany({
-            where: {
-                userId,
-                taskId: {
-                    in: adviceTasks.map((task) => task.id),
-                },
-            },
-            select: { taskId: true },
-        })
-        : [];
-    const advisedTaskIds = new Set(advisedComments.map((comment) => comment.taskId));
-    const adviceRequestTask = adviceTasks
-        .filter((task) => !advisedTaskIds.has(task.id))
-        .map((task) => ({
-        task,
-        helperCount: task.helpers?.length ?? 0,
-        lastHelperAt: task.createdAt,
-    }))[0];
-    const successStoryPush = successStoryTask?.Push?.[0] ?? null;
-    return {
-        modules: {
-            successStory: successStoryTask && successStoryTask.completedAt && successStoryPush
-                ? buildSuccessStoryModule(successStoryTask, successStoryPush.createdAt, successStoryTask.completedAt)
-                : null,
-            needsYourPush: needsYourPushTask ? buildNeedsYourPushModule(needsYourPushTask) : null,
-            updateProgress: updateProgressTask
-                ? buildUpdateProgressModule(updateProgressTask.task, updateProgressTask.pushCount, updateProgressTask.lastPushAt)
-                : null,
-            adviceRequestWaitingOnYou: adviceRequestTask
-                ? buildAdviceRequestModule(adviceRequestTask.task, adviceRequestTask.helperCount, adviceRequestTask.lastHelperAt)
-                : null,
-        },
-    };
-}
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 async function syncUserToDB({ id, email, name, photo, fcmToken, }) {
-    const existingSeededUser = await client_1.prisma.user.findFirst({
-        where: {
-            origin: seededUser_service_1.USER_ORIGIN.SEEDED,
-            OR: [{ id }, { email }],
-        },
-        select: { id: true },
-    });
-    if (existingSeededUser) {
-        throw new AppError_1.AppError("Seeded users cannot authenticate", httpStatus_1.HttpStatus.FORBIDDEN);
-    }
     return client_1.prisma.user.upsert({
         where: { id },
-        update: { name, email, photo, fcmToken, origin: seededUser_service_1.USER_ORIGIN.REAL },
-        create: { id, name, email, photo, fcmToken, origin: seededUser_service_1.USER_ORIGIN.REAL },
-        select: {
-            id: true,
-            email: true,
-            name: true,
-            username: true,
-            photo: true,
-            avatarInitial: true,
-            avatarColor: true,
-            createdAt: true,
-            fcmToken: true,
-        },
+        update: { name, email, photo, fcmToken },
+        create: { id, name, email, photo, fcmToken },
     });
 }
 async function getMutualFriends(currentUserId, targetUserId) {
@@ -319,29 +48,24 @@ async function getMutualFriends(currentUserId, targetUserId) {
             id: true,
             name: true,
             photo: true,
-            username: true,
-            avatarInitial: true,
-            avatarColor: true,
+            email: true,
         },
         take: 5,
     });
-    return mutuals.map(user_serializers_1.toPublicUser);
+    return mutuals;
 }
 async function matchUsersByEmail(emails, followerId) {
     const users = await client_1.prisma.user.findMany({
         where: {
             email: { in: emails.map((e) => e.toLowerCase()) },
             id: { not: followerId }, // optional: exclude self
-            origin: seededUser_service_1.USER_ORIGIN.REAL,
         },
         select: {
             id: true,
             email: true,
             name: true,
-            photo: true,
             username: true,
-            avatarInitial: true,
-            avatarColor: true,
+            photo: true,
         },
     });
     const followMap = await client_1.prisma.follow.findMany({
@@ -391,31 +115,23 @@ async function toggleFollowUser(followerId, followingId) {
                 followingId,
             },
         });
-        const [follower, followedUser] = await Promise.all([
-            client_1.prisma.user.findUnique({
-                where: { id: followerId },
-                select: { name: true, photo: true },
-            }),
-            client_1.prisma.user.findUnique({
-                where: { id: followingId },
-                select: { origin: true },
-            }),
-        ]);
-        if (followedUser?.origin === seededUser_service_1.USER_ORIGIN.REAL) {
-            await client_1.prisma.notification.create({
-                data: {
-                    userId: followingId,
-                    senderId: followerId,
-                    type: "follow",
-                    message: `${follower?.name ?? "Someone"} followed you`,
-                    metadata: {
-                        followerId,
-                        followerName: follower?.name,
-                        followerPhoto: follower?.photo,
-                    },
+        const follower = await client_1.prisma.user.findUnique({
+            where: { id: followerId },
+            select: { name: true, photo: true },
+        });
+        await client_1.prisma.notification.create({
+            data: {
+                userId: followingId,
+                senderId: followerId,
+                type: "follow",
+                message: (0, notificationTextCatalog_1.getFollowNotificationMessage)(follower?.name ?? "Someone"),
+                metadata: {
+                    followerId,
+                    followerName: follower?.name,
+                    followerPhoto: follower?.photo,
                 },
-            });
-        }
+            },
+        });
         return { success: true, action: "followed" };
     }
     catch (err) {
@@ -434,10 +150,9 @@ async function getFollowers(userId) {
                 select: {
                     id: true,
                     name: true,
-                    photo: true,
                     username: true,
-                    avatarInitial: true,
-                    avatarColor: true,
+                    email: true,
+                    photo: true,
                 },
             },
         },
@@ -454,7 +169,7 @@ async function getFollowers(userId) {
     const result = followers
         .filter((f) => f.follower !== null)
         .map((f) => ({
-        ...(0, user_serializers_1.toPublicUser)(f.follower),
+        ...f.follower,
         isFollowing: followingIds.has(f.follower.id),
     }));
     console.log("✅ Filtered followers:", result.map((r) => r.id));
@@ -471,10 +186,9 @@ async function getFollowing(userId) {
                 select: {
                     id: true,
                     name: true,
-                    photo: true,
                     username: true,
-                    avatarInitial: true,
-                    avatarColor: true,
+                    email: true,
+                    photo: true,
                 },
             },
         },
@@ -483,7 +197,7 @@ async function getFollowing(userId) {
     const result = followings
         .filter((f) => f.following !== null)
         .map((f) => ({
-        ...(0, user_serializers_1.toPublicUser)(f.following),
+        ...f.following,
         isFollowing: true,
     }));
     console.log("✅ Filtered following:", result.map((r) => r.id));
@@ -498,8 +212,6 @@ async function getUserById(userId) {
             email: true,
             username: true,
             photo: true,
-            avatarInitial: true,
-            avatarColor: true,
             createdAt: true,
         },
     });
@@ -556,72 +268,232 @@ async function searchFriendsService(userId, query, includeFollowed) {
             id: { not: userId },
             OR: [
                 { name: { contains: query, mode: "insensitive" } },
-                { username: { contains: query, mode: "insensitive" } },
+                { email: { contains: query, mode: "insensitive" } },
             ],
         },
         select: {
             id: true,
             name: true,
-            photo: true,
             username: true,
-            avatarInitial: true,
-            avatarColor: true,
+            email: true,
+            photo: true,
         },
         take: 10,
     });
     return users
         .filter((user) => (includeFollowed ? true : !followingIdSet.has(user.id)))
         .map((user) => ({
-        ...(0, user_serializers_1.toPublicUser)(user),
+        ...user,
         isFollowing: followingIdSet.has(user.id),
     }));
 }
-async function getPublicProfileStatsForUser(userId) {
-    const [pushesSentCount, pushedTasks, tasksCompletedCount] = await Promise.all([
-        client_1.prisma.push.count({ where: { userId } }),
-        client_1.prisma.push.findMany({
-            where: { userId },
-            select: {
-                task: {
-                    select: { userId: true },
-                },
-            },
+async function getHomeSummaryForUser(userId, utcOffsetMinutes = 0) {
+    // Who the current user follows — the home feed only cares about these people.
+    const [following, compactStatus, ownGoal] = await Promise.all([
+        client_1.prisma.follow.findMany({
+            where: { followerId: userId },
+            select: { followingId: true },
         }),
-        client_1.prisma.task.count({
-            where: {
-                userId,
-                completed: true,
+        getHomeCompactStatusForUser(userId, utcOffsetMinutes),
+        // The user's own most recent active goal — authoritative source for the
+        // "Your goal" card (decoupled from the shared "needs a push" feed).
+        client_1.prisma.task.findFirst({
+            where: { userId, type: "motivation", completed: false, completedAt: null },
+            orderBy: { createdAt: "desc" },
+            select: {
+                id: true,
+                text: true,
+                pushCount: true,
+                createdAt: true,
+                _count: { select: { progressUpdates: true } },
             },
         }),
     ]);
-    const peoplePushedCount = new Set(pushedTasks
-        .map((push) => push.task.userId)
-        .filter((ownerId) => ownerId !== userId)).size;
+    const followingIds = following.map((f) => f.followingId);
+    const yourGoal = ownGoal
+        ? {
+            taskId: ownGoal.id,
+            text: ownGoal.text,
+            pushCount: ownGoal.pushCount,
+            createdAt: ownGoal.createdAt.toISOString(),
+            progressCount: ownGoal._count.progressUpdates,
+        }
+        : null;
+    // No one followed yet → empty but valid summary.
+    if (followingIds.length === 0) {
+        return {
+            yourGoal,
+            summaryCounts: { peopleNeedYourPushToday: 0, replyWaitingCount: 0 },
+            compactStatus,
+            modules: null,
+            successStory: null,
+            heroModule: null,
+            peopleNeedYourPushToday: 0,
+            replyWaitingCount: 0,
+            featuredStory: null,
+        };
+    }
+    const [pushableTasks, pushedCompleted] = await Promise.all([
+        // Active motivation tasks from followed users the current user hasn't pushed yet.
+        client_1.prisma.task.findMany({
+            where: {
+                userId: { in: followingIds },
+                completed: false,
+                isPublic: true,
+                type: "motivation",
+                Push: { none: { userId } },
+            },
+            select: { userId: true },
+        }),
+        // Most recent completed motivation task the current user pushed → success story.
+        client_1.prisma.task.findFirst({
+            where: {
+                completed: true,
+                completedAt: { not: null },
+                userId: { in: followingIds },
+                type: "motivation",
+                Push: { some: { userId } },
+            },
+            orderBy: { completedAt: "desc" },
+            include: {
+                user: { select: { id: true, name: true, photo: true } },
+                Push: { where: { userId }, select: { createdAt: true }, take: 1 },
+            },
+        }),
+    ]);
+    const peopleNeedYourPushToday = new Set(pushableTasks.map((t) => t.userId)).size;
+    // Reply/advice/decision mechanics are deprecated (motivation-only product).
+    // Field kept for the mobile contract; always 0 now.
+    const replyWaitingCount = 0;
+    let successStory = null;
+    let featuredStory = null;
+    if (pushedCompleted && pushedCompleted.completedAt) {
+        const owner = pushedCompleted.user;
+        const pushedAt = pushedCompleted.Push[0]?.createdAt ?? null;
+        const entity = {
+            type: "task",
+            taskId: pushedCompleted.id,
+            taskText: pushedCompleted.text,
+            ownerId: owner.id,
+            ownerName: owner.name,
+            ownerPhoto: owner.photo ?? null,
+        };
+        successStory = {
+            type: "success_story",
+            title: `${owner.name} pulled it off`,
+            body: `Your push helped ${owner.name} finish their task.`,
+            entity,
+            timestamps: {
+                contributedAt: (pushedAt ?? pushedCompleted.completedAt).toISOString(),
+                resultAt: pushedCompleted.completedAt.toISOString(),
+            },
+        };
+        featuredStory = {
+            type: "motivation-success",
+            taskId: pushedCompleted.id,
+            taskText: pushedCompleted.text,
+            ownerId: owner.id,
+            ownerName: owner.name,
+            ownerPhoto: owner.photo ?? null,
+            pushedAt: pushedAt ? pushedAt.toISOString() : null,
+            completedAt: pushedCompleted.completedAt.toISOString(),
+        };
+    }
     return {
-        pushesSentCount,
-        peoplePushedCount,
-        peopleHelpedCount: peoplePushedCount,
-        tasksCompletedCount,
+        yourGoal,
+        summaryCounts: { peopleNeedYourPushToday, replyWaitingCount },
+        compactStatus,
+        modules: successStory ? { successStory } : null,
+        successStory,
+        heroModule: successStory,
+        peopleNeedYourPushToday,
+        replyWaitingCount,
+        featuredStory,
     };
 }
+async function getHomeCompactStatusForUser(userId, utcOffsetMinutes) {
+    const now = new Date();
+    const todayRange = getUtcRangeForLocalDate(now, utcOffsetMinutes);
+    const since = new Date(todayRange.start.getTime() - 370 * 24 * 60 * 60 * 1000);
+    const [pushedTodayCount, recentPushes] = await Promise.all([
+        client_1.prisma.push.count({
+            where: {
+                userId,
+                createdAt: {
+                    gte: todayRange.start,
+                    lt: todayRange.end,
+                },
+                task: {
+                    type: "motivation",
+                    userId: { not: userId },
+                },
+            },
+        }),
+        client_1.prisma.push.findMany({
+            where: {
+                userId,
+                createdAt: { gte: since },
+                task: {
+                    type: "motivation",
+                    userId: { not: userId },
+                },
+            },
+            select: { createdAt: true },
+            orderBy: { createdAt: "desc" },
+        }),
+    ]);
+    const pushDayKeys = new Set(recentPushes.map((push) => getLocalDateKey(push.createdAt, utcOffsetMinutes)));
+    const todayKey = getLocalDateKey(now, utcOffsetMinutes);
+    if (!pushDayKeys.has(todayKey)) {
+        return { streakDay: 0, pushedTodayCount: 0 };
+    }
+    const localCursor = getLocalDateParts(now, utcOffsetMinutes);
+    const cursorDate = new Date(Date.UTC(localCursor.year, localCursor.month, localCursor.day));
+    let streakDay = 0;
+    while (pushDayKeys.has(toDateKey(cursorDate))) {
+        streakDay += 1;
+        cursorDate.setUTCDate(cursorDate.getUTCDate() - 1);
+    }
+    return { streakDay, pushedTodayCount };
+}
+function getUtcRangeForLocalDate(date, utcOffsetMinutes) {
+    const parts = getLocalDateParts(date, utcOffsetMinutes);
+    const start = new Date(Date.UTC(parts.year, parts.month, parts.day) -
+        utcOffsetMinutes * 60 * 1000);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return { start, end };
+}
+function getLocalDateKey(date, utcOffsetMinutes) {
+    const parts = getLocalDateParts(date, utcOffsetMinutes);
+    return [
+        String(parts.year).padStart(4, "0"),
+        String(parts.month + 1).padStart(2, "0"),
+        String(parts.day).padStart(2, "0"),
+    ].join("-");
+}
+function getLocalDateParts(date, utcOffsetMinutes) {
+    const shifted = new Date(date.getTime() + utcOffsetMinutes * 60 * 1000);
+    return {
+        year: shifted.getUTCFullYear(),
+        month: shifted.getUTCMonth(),
+        day: shifted.getUTCDate(),
+    };
+}
+function toDateKey(date) {
+    return [
+        String(date.getUTCFullYear()).padStart(4, "0"),
+        String(date.getUTCMonth() + 1).padStart(2, "0"),
+        String(date.getUTCDate()).padStart(2, "0"),
+    ].join("-");
+}
 async function getUserProfileById(targetUserId, currentUserId) {
-    const user = await client_1.prisma.user.findUnique({
-        where: { id: targetUserId },
-        select: {
-            id: true,
-            name: true,
-            username: true,
-            photo: true,
-            avatarInitial: true,
-            avatarColor: true,
-        },
-    });
+    const user = await getUserById(targetUserId);
     if (!user)
         throw new AppError_1.AppError("User not found", httpStatus_1.HttpStatus.NOT_FOUND);
-    const [followersCount, followingCount, publicStats, recentTasks, mutualFriends,] = await Promise.all([
+    const [followersCount, followingCount, taskStats, recentTasks, mutualFriends,] = await Promise.all([
         getFollowersCount(targetUserId),
         getFollowingCount(targetUserId),
-        getPublicProfileStatsForUser(targetUserId),
+        getTaskStatsForUser(targetUserId),
         (0, task_service_1.getRecentTasksForUserProfile)(targetUserId, currentUserId, 5),
         currentUserId ? getMutualFriends(currentUserId, targetUserId) : [],
     ]);
@@ -650,19 +522,19 @@ async function getUserProfileById(targetUserId, currentUserId) {
         isFollowedBy = !!followData2;
     }
     return {
-        ...(0, user_serializers_1.toPublicUser)(user),
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        photo: user.photo,
         bio: null,
         followersCount,
         followingCount,
         isFollowing,
         isFollowedBy,
         recentTasks,
-        recentActivity: recentTasks,
         mutualFriends,
-        publicStats,
-        pushesSentCount: publicStats.pushesSentCount,
-        peoplePushedCount: publicStats.peoplePushedCount,
-        peopleHelpedCount: publicStats.peopleHelpedCount,
-        tasksCompletedCount: publicStats.tasksCompletedCount,
+        taskSuccessRate: taskStats.successRate,
+        tasksDone: taskStats.tasksDone,
+        dayStreak: taskStats.dayStreak,
     };
 }

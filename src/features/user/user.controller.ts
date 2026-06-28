@@ -9,17 +9,17 @@ import {
   toggleFollowUser,
 } from "./user.service";
 import jwt from "jsonwebtoken";
+import { User } from "@prisma/client";
 import { BadRequestError } from "../../errors";
 import { AppError } from "../../errors/AppError";
 import { getUserProfileById } from "./user.service";
 import { getParamString } from "../../utils/params";
-import { touchUserActivity } from "../../utils/touchUserActivity";
 
 import {
   getFollowersCount,
   getFollowingCount,
-  getHomeSummaryForUser,
   getTaskStatsForUser,
+  getHomeSummaryForUser,
 } from "./user.service";
 
 export async function handleSyncUser(
@@ -37,8 +37,7 @@ export async function handleSyncUser(
   }
 
   try {
-    const user = await syncUserToDB({ id, email, name, photo, fcmToken });
-    void touchUserActivity(user.id);
+    const user: User = await syncUserToDB({ id, email, name, photo, fcmToken });
 
     console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
 
@@ -51,7 +50,7 @@ export async function handleSyncUser(
     res.status(200).json({ user, token });
   } catch (error) {
     console.error("[USER_API_ERROR]", error);
-    next(error instanceof AppError ? error : new AppError("Failed to sync user", 500));
+    next(new AppError("Failed to sync user", 500));
   }
 }
 
@@ -226,23 +225,26 @@ export async function handleGetHomeSummary(
 ) {
   try {
     const userId = req.user?.id;
-    if (!userId) {
-      res.status(200).json({
-        modules: {
-          successStory: null,
-          needsYourPush: null,
-          updateProgress: null,
-          adviceRequestWaitingOnYou: null,
-        },
-      });
-      return;
-    }
+    if (!userId) return next(new AppError("Unauthorized", 401));
 
-    const summary = await getHomeSummaryForUser(userId);
+    const utcOffsetMinutes = parseUtcOffsetMinutes(req.query.utcOffsetMinutes);
+    const summary = await getHomeSummaryForUser(userId, utcOffsetMinutes);
     res.status(200).json(summary);
   } catch (err) {
-    next(err instanceof AppError ? err : new AppError("Failed to fetch home summary", 500));
+    console.error("[HOME_SUMMARY_ERROR]", err);
+    next(new AppError("Failed to fetch home summary", 500));
   }
+}
+
+function parseUtcOffsetMinutes(value: unknown): number {
+  const raw = getParamString(value);
+  const parsed = raw ? Number(raw) : 0;
+
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return Math.max(-14 * 60, Math.min(14 * 60, Math.trunc(parsed)));
 }
 
 export async function searchFriends(

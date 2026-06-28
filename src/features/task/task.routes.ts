@@ -6,10 +6,10 @@ import {
   handleDeleteTask,
   handleMarkTaskAsDone,
   handleMarkTaskNotDone,
+  handleShareTaskProgress,
   handleGetTaskById,
   handleGetTaskViewCount,
   handleIncreaseTaskViewCount,
-  handleShareTaskProgress,
 } from "./task.controller";
 import { requireAuth } from "../../middleware/requireAuth";
 import { optionalAuth } from "../../middleware/optionalAuth"; // FIXED path

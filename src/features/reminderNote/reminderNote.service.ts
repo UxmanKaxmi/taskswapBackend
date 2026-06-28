@@ -3,7 +3,10 @@ import { prisma } from "../../db/client";
 import { BadRequestError } from "../../errors";
 import { ReminderNoteDTO, SendReminderNoteInput } from "./reminderNote.types";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
-import { USER_ORIGIN } from "../seededUser/seededUser.service";
+import {
+  getReminderNoteNotificationText,
+  getReminderReceivedNotificationMessage,
+} from "../../utils/notificationTextCatalog";
 
 export async function sendReminderNote({
   taskId,
@@ -20,7 +23,7 @@ export async function sendReminderNote({
       userId: true,
       text: true,
       type: true,
-      user: { select: { fcmToken: true, origin: true } },
+      user: { select: { fcmToken: true } },
     },
   });
 
@@ -29,13 +32,14 @@ export async function sendReminderNote({
     throw new BadRequestError("You cannot remind yourself.");
 
   // Notify task owner via push
-  if (task.user?.fcmToken && task.user.origin === USER_ORIGIN.REAL) {
+  if (task.user?.fcmToken) {
+    const { title, body } = getReminderNoteNotificationText(message);
     await sendPushNotification(
       task.user.fcmToken,
-      "⏰ You got a reminder!",
-      message,
+      title,
+      body,
       {
-        notificationType: NOTIFICATION_TYPES.REMINDER,
+        notificationType: "reminder",
         taskId,
         taskType: task.type,
         screen: "TaskDetail",
@@ -62,25 +66,23 @@ export async function sendReminderNote({
     select: { name: true, photo: true },
   });
 
-  if (task.user.origin === USER_ORIGIN.REAL) {
-    // Create notification entry
-    await prisma.notification.create({
-      data: {
-        userId: task.userId,
+  // Create notification entry
+  await prisma.notification.create({
+    data: {
+      userId: task.userId,
+      senderId,
+      type: NOTIFICATION_TYPES.REMINDER,
+      taskType: task.type,
+      message: getReminderReceivedNotificationMessage(sender?.name ?? "Someone"),
+      metadata: {
+        taskId,
         senderId,
-        type: NOTIFICATION_TYPES.REMINDER,
-        taskType: task.type,
-        message: `${sender?.name ?? "Someone"} reminded you about your task.`,
-        metadata: {
-          taskId,
-          senderId,
-          taskText: task.text,
-          senderName: sender?.name,
-          senderPhoto: sender?.photo,
-        },
+        taskText: task.text,
+        senderName: sender?.name,
+        senderPhoto: sender?.photo,
       },
-    });
-  }
+    },
+  });
 
   return reminder;
 }

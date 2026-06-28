@@ -2,35 +2,22 @@ import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { prisma } from "../../db/client";
 import { sendPushNotification } from "../../utils/sendPushNotification";
 import { schedulePush } from "../../utils/scheduleReminderPush";
-import { Prisma } from "@prisma/client";
-import { USER_ORIGIN } from "../seededUser/seededUser.service";
+import {
+  DEFAULT_TEST_NOTIFICATION_TEXT,
+  getCommentMentionNotificationMessage,
+  getDecisionDoneNotificationMessage,
+  getMotivationMilestoneNotificationText,
+  getMotivationPushNotificationMessage,
+  getProgressUpdateNotificationText,
+  getTaskAdviceNotificationMessage,
+  getTaskHelperNotificationMessage,
+  getTaskProgressUpdateNotificationMessage,
+  getNotificationMarkerMessage,
+} from "../../utils/notificationTextCatalog";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 
 const MOTIVATION_PUSH_MILESTONES = [10, 100, 500, 1000];
-
-async function getNotifiableUserIds(userIds: string[]) {
-  const uniqueIds = [...new Set(userIds)];
-  if (!uniqueIds.length) return [];
-
-  const users = await prisma.user.findMany({
-    where: {
-      id: { in: uniqueIds },
-      origin: USER_ORIGIN.REAL,
-    },
-    select: { id: true },
-  });
-
-  return users.map((user) => user.id);
-}
-
-async function canReceiveNotifications(userId: string) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { origin: true },
-  });
-
-  return user?.origin === USER_ORIGIN.REAL;
-}
 
 // 📨 Get notifications for the logged-in user
 export async function getUserNotifications(userId: string) {
@@ -80,6 +67,27 @@ export async function markNotificationsAsRead(notificationIds: string[]) {
   });
 }
 
+// 🔔 Send a test push notification to a user
+export async function sendTestNotification(
+  userId: string,
+  title: string = DEFAULT_TEST_NOTIFICATION_TEXT.title,
+  body: string = DEFAULT_TEST_NOTIFICATION_TEXT.body,
+  data?: Record<string, string>
+) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fcmToken: true },
+  });
+
+  console.log("🎯 Token:", user?.fcmToken);
+
+  if (!user?.fcmToken) {
+    throw new Error("User or FCM token not found");
+  }
+
+  await sendPushNotification(user.fcmToken, title, body, data);
+}
+
 // 👥 Notify helpers when invited to a task
 export async function createTaskHelperNotifications({
   helperIds,
@@ -93,9 +101,6 @@ export async function createTaskHelperNotifications({
   taskText: string;
 }) {
   if (!helperIds.length) return;
-  const recipientIds = await getNotifiableUserIds(helperIds);
-
-  if (!recipientIds.length) return;
 
   const task = await prisma.task.findUnique({
   where: { id: taskId },
@@ -106,12 +111,12 @@ if (!task) {
   return;
 }
   await prisma.notification.createMany({
-    data: recipientIds.map((helperId) => ({
+    data: helperIds.map((helperId) => ({
       userId: helperId,
       senderId,
       type: NOTIFICATION_TYPES.TASK_HELPER,
       taskType: task.type, 
-      message: `invited you to help with`,
+      message: getTaskHelperNotificationMessage(),
       metadata: {
         taskId,
         taskText,
@@ -132,9 +137,6 @@ export async function createDecisionTaskDoneNotifications({
   taskText: string;
 }) {
   if (!helperIds.length) return;
-  const recipientIds = await getNotifiableUserIds(helperIds);
-
-  if (!recipientIds.length) return;
 
   const task = await prisma.task.findUnique({
   where: { id: taskId },
@@ -146,80 +148,18 @@ if (!task) {
   return;
 }
   await prisma.notification.createMany({
-    data: recipientIds.map((helperId) => ({
+    data: helperIds.map((helperId) => ({
       userId: helperId,
       senderId,
       type: NOTIFICATION_TYPES.DECISION_DONE,
       taskType: task.type, // 👈 important
-      message: `marked the decision “${taskText}” as done.`,
+      message: getDecisionDoneNotificationMessage(taskText),
       metadata: {
         taskId,
         taskText,
       },
     })),
   });
-}
-
-export async function createTaskCompletedNotifications({
-  recipientIds,
-  senderId,
-  taskId,
-  taskText,
-  taskType,
-  senderName,
-}: {
-  recipientIds: string[];
-  senderId: string;
-  taskId: string;
-  taskText: string;
-  taskType: string;
-  senderName: string;
-}) {
-  const uniqueRecipientIds = await getNotifiableUserIds(
-    [...new Set(recipientIds)].filter((recipientId) => recipientId !== senderId)
-  );
-
-  if (!uniqueRecipientIds.length) return;
-
-  await prisma.notification.createMany({
-    data: uniqueRecipientIds.map((recipientId) => ({
-      userId: recipientId,
-      senderId,
-      type: NOTIFICATION_TYPES.TASK_COMPLETED,
-      taskType,
-      message: `completed “${taskText}”.`,
-      metadata: {
-        taskId,
-        taskText,
-      },
-    })),
-  });
-
-  const recipients = await prisma.user.findMany({
-    where: {
-      id: { in: uniqueRecipientIds },
-      fcmToken: { not: null },
-      origin: USER_ORIGIN.REAL,
-    },
-    select: {
-      id: true,
-      fcmToken: true,
-    },
-  });
-
-  await Promise.all(
-    recipients.map((recipient) =>
-      recipient.fcmToken
-        ? schedulePush(0, recipient.fcmToken, "✅ Task completed", `${senderName} completed "${taskText}"`, {
-            notificationType: NOTIFICATION_TYPES.TASK_COMPLETED,
-            taskId,
-            taskType,
-            screen: "TaskDetail",
-            deeplinkPath: `/tasks/${taskId}`,
-          })
-        : undefined
-    )
-  );
 }
 
 export async function createTaskProgressUpdateNotifications({
@@ -241,9 +181,9 @@ export async function createTaskProgressUpdateNotifications({
   taskType: string;
   senderName: string;
 }) {
-  const uniqueRecipientIds = await getNotifiableUserIds([...new Set(recipientIds)].filter(
+  const uniqueRecipientIds = [...new Set(recipientIds)].filter(
     (recipientId) => recipientId !== senderId
-  ));
+  );
 
   if (!uniqueRecipientIds.length) return;
 
@@ -253,7 +193,7 @@ export async function createTaskProgressUpdateNotifications({
       senderId,
       type: NOTIFICATION_TYPES.TASK_PROGRESS_UPDATE,
       taskType,
-      message: `${senderName} shared a progress update on your task.`,
+      message: getTaskProgressUpdateNotificationMessage(senderName),
       metadata: {
         taskId,
         taskText,
@@ -267,7 +207,6 @@ export async function createTaskProgressUpdateNotifications({
     where: {
       id: { in: uniqueRecipientIds },
       fcmToken: { not: null },
-      origin: USER_ORIGIN.REAL,
     },
     select: {
       id: true,
@@ -275,18 +214,18 @@ export async function createTaskProgressUpdateNotifications({
     },
   });
 
-  const pushBody = `${senderName} shared a progress update on "${taskText}"`;
+  const { title, body } = getProgressUpdateNotificationText(taskText, senderName);
 
   await Promise.all(
     recipients.map((recipient) =>
       recipient.fcmToken
-        ? schedulePush(0, recipient.fcmToken, "📈 Progress update", pushBody, {
+        ? schedulePush(0, recipient.fcmToken, title, body, {
             notificationType: NOTIFICATION_TYPES.TASK_PROGRESS_UPDATE,
             taskId,
             taskType,
             progressUpdateId,
-            screen: "TaskDetail",
             deeplinkPath: `/tasks/${taskId}`,
+            screen: "TaskDetail",
           })
         : undefined
     )
@@ -294,10 +233,6 @@ export async function createTaskProgressUpdateNotifications({
 }
 
 export async function sendTestDecisionDoneNotification(userId: string) {
-  if (!(await canReceiveNotifications(userId))) {
-    throw new Error("User not found");
-  }
-
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -314,7 +249,7 @@ export async function sendTestDecisionDoneNotification(userId: string) {
       userId,
       senderId: userId,
       type: NOTIFICATION_TYPES.DECISION_DONE,
-      message: `marked the decision “Test Decision” as done.`,
+      message: getDecisionDoneNotificationMessage("Test Decision"),
       metadata: {
         taskId: "demo-task-id",
         taskText: "Test Decision",
@@ -353,7 +288,6 @@ export async function createTaskAdviceNotification(
   if (!task) return;
   if (task.type !== "advice") return;
   if (task.userId === senderId) return;
-  if (!(await canReceiveNotifications(task.userId))) return;
 
   await tx.notification.create({
     data: {
@@ -361,7 +295,7 @@ export async function createTaskAdviceNotification(
       senderId,
       type: NOTIFICATION_TYPES.TASK_ADVICE,
       taskType: task.type,
-      message: "gave advice on your task",
+      message: getTaskAdviceNotificationMessage(),
       metadata: {
         taskId,
         taskText: task.text,
@@ -390,9 +324,6 @@ export async function createCommentMentionNotifications(
   }
 ) {
   if (!mentionedIds.length) return;
-  const recipientIds = await getNotifiableUserIds(mentionedIds);
-
-  if (!recipientIds.length) return;
 
   const task = await tx.task.findUnique({
     where: { id: taskId },
@@ -402,12 +333,12 @@ export async function createCommentMentionNotifications(
   if (!task) return;
 
   await tx.notification.createMany({
-    data: recipientIds.map((userId) => ({
+    data: mentionedIds.map((userId) => ({
       userId,
       senderId,
       type: NOTIFICATION_TYPES.COMMENT,
       taskType: task.type,
-      message: "mentioned you in a comment",
+      message: getCommentMentionNotificationMessage(),
       metadata: {
         taskId,
         commentId,
@@ -429,61 +360,27 @@ export async function createMotivationPushNotification({
   pushedByUserId: string;
 }) {
   if (taskOwnerId === pushedByUserId) return;
-  if (!(await canReceiveNotifications(taskOwnerId))) return;
 
-  const [task, taskOwner, pushedByUser] = await Promise.all([
-    prisma.task.findUnique({
-      where: { id: taskId },
-      select: { type: true, text: true },
-    }),
-    prisma.user.findUnique({
-      where: { id: taskOwnerId },
-      select: { fcmToken: true, origin: true },
-    }),
-    prisma.user.findUnique({
-      where: { id: pushedByUserId },
-      select: { name: true, origin: true },
-    }),
-  ]);
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { type: true, text: true },
+  });
 
   if (!task) return;
-  if (task.type !== "motivation") return;
 
-  const notification = await prisma.notification.create({
+  return prisma.notification.create({
     data: {
       userId: taskOwnerId,
       senderId: pushedByUserId,
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_PUSH,
       taskType: task.type,
-      message: "pushed your motivation 💪",
+      message: getMotivationPushNotificationMessage(),
       metadata: {
         taskId,
         taskText: task.text,
       },
     },
   });
-
-  if (taskOwner?.fcmToken && taskOwner.origin === USER_ORIGIN.REAL) {
-    const senderName =
-      pushedByUser?.origin === USER_ORIGIN.SEEDED
-        ? "Someone"
-        : pushedByUser?.name?.trim() || "Someone";
-    await sendPushNotification(
-      taskOwner.fcmToken,
-      `${senderName} pushed your motivation.`,
-      task.text,
-      {
-        notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_PUSH,
-        taskId,
-        taskType: task.type,
-        notificationId: notification.id,
-        screen: "TaskDetail",
-        deeplinkPath: `/tasks/${taskId}`,
-      }
-    );
-  }
-
-  return notification;
 }
 
 
@@ -497,7 +394,6 @@ export async function createMotivationMilestoneNotification({
   pushCount: number;
 }) {
   if (!MOTIVATION_PUSH_MILESTONES.includes(pushCount)) return;
-  if (!(await canReceiveNotifications(taskOwnerId))) return;
 
   const task = await prisma.task.findUnique({
     where: { id: taskId },
@@ -533,23 +429,20 @@ export async function createMotivationMilestoneNotification({
   // 📱 Send FCM push
   const user = await prisma.user.findUnique({
     where: { id: taskOwnerId },
-    select: { fcmToken: true, origin: true },
+    select: { fcmToken: true },
   });
 
-  if (user?.fcmToken && user.origin === USER_ORIGIN.REAL) {
-    await sendPushNotification(
-      user.fcmToken,
-      "🔥 Motivation milestone!",
-      `Your motivation just reached ${pushCount} pushes`,
-      {
-        notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE,
-        taskId,
-        taskType: task.type,
-        pushCount,
-        screen: "TaskDetail",
-        deeplinkPath: `/tasks/${taskId}`,
-      }
-    );
+  if (user?.fcmToken) {
+    const { title, body } = getMotivationMilestoneNotificationText(pushCount);
+
+    await sendPushNotification(user.fcmToken, title, body, {
+      notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE,
+      taskId,
+      taskType: task.type,
+      pushCount: String(pushCount),
+      deeplinkPath: `/tasks/${taskId}`,
+      screen: "TaskDetail",
+    });
   }
 
   // 🧠 Save internal marker so we don’t resend
@@ -558,7 +451,7 @@ export async function createMotivationMilestoneNotification({
       userId: taskOwnerId,
       type: NOTIFICATION_TYPES.TASK_MOTIVATION_MILESTONE_SENT,
       taskType: task.type,
-      message: "milestone push sent",
+      message: getNotificationMarkerMessage(),
       read: true, // internal marker; never show as unread
       metadata: {
         taskId,

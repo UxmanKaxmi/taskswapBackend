@@ -5,6 +5,7 @@ exports.startNotificationReminderSweep = startNotificationReminderSweep;
 const client_1 = require("../../db/client");
 const notificationTypes_1 = require("../../types/notificationTypes");
 const sendPushNotification_1 = require("../../utils/sendPushNotification");
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 const seededUser_service_1 = require("../seededUser/seededUser.service");
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -15,8 +16,34 @@ const HELP_PUSH_REMINDER_AFTER_MS = 3 * DAY_MS;
 const UNFINISHED_REMINDER_MAX_PER_TASK = 3;
 const HELP_PUSH_REMINDER_MAX_PER_WEEK = 2;
 const HELP_PUSH_REMINDER_COOLDOWN_MS = 4 * DAY_MS;
+const MAX_UNFINISHED_PER_SWEEP = 3;
+const MAX_HELP_PUSH_PER_SWEEP = 3;
+const MAX_UNFINISHED_CANDIDATES_PER_SWEEP = 15;
+const MAX_HELP_PUSH_CANDIDATES_PER_SWEEP = 15;
+const SWEEP_SEND_SPACING_MS = 2 * 60 * 1000;
+const SWEEP_SEND_JITTER_MS = 90 * 1000;
 let sweepRunning = false;
 let sweepTimer = null;
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function shuffle(values) {
+    const copy = [...values];
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+        const swapIndex = randomInt(0, index);
+        [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+    }
+    return copy;
+}
+async function staggerNotification(index) {
+    if (index === 0)
+        return;
+    const delayMs = (index * SWEEP_SEND_SPACING_MS) + randomInt(0, SWEEP_SEND_JITTER_MS);
+    await sleep(delayMs);
+}
 function buildTaskMetadata(taskId, taskText) {
     return {
         taskId,
@@ -34,19 +61,19 @@ function buildInactivityNotificationWhere(userId, taskId) {
     };
 }
 async function sendUnfinishedMotivationReminder(user, task) {
-    const message = `Your motivation "${task.text}" still needs attention.`;
+    const { title, body } = (0, notificationTextCatalog_1.getUnfinishedMotivationReminderText)(task.text);
     await client_1.prisma.notification.create({
         data: {
             userId: user.id,
             senderId: null,
             type: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
             taskType: "motivation",
-            message,
+            message: body,
             metadata: buildTaskMetadata(task.id, task.text),
         },
     });
     if (user.fcmToken) {
-        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, "Keep going", message, {
+        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, title, body, {
             notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
             taskId: task.id,
             taskType: "motivation",
@@ -56,23 +83,21 @@ async function sendUnfinishedMotivationReminder(user, task) {
     }
 }
 async function sendHelpPushReminder(user, taskCount) {
-    const message = taskCount === 1
-        ? "One motivation task is waiting for your push."
-        : `${taskCount} motivation tasks are waiting for your push.`;
+    const { title, body } = (0, notificationTextCatalog_1.getHelpPushReminderNotificationText)(taskCount);
     await client_1.prisma.notification.create({
         data: {
             userId: user.id,
             senderId: null,
             type: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
             taskType: "motivation",
-            message,
+            message: body,
             metadata: {
                 taskCount,
             },
         },
     });
     if (user.fcmToken) {
-        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, "Help someone push", message, {
+        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, title, body, {
             notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
             taskType: "motivation",
             screen: "Home",
@@ -207,10 +232,14 @@ async function runNotificationReminderSweep() {
                 lastOpenedAt: "asc",
             },
         });
-        for (const user of unfinishedUsers) {
+        const unfinishedBatch = shuffle(unfinishedUsers.slice(0, MAX_UNFINISHED_CANDIDATES_PER_SWEEP)).slice(0, MAX_UNFINISHED_PER_SWEEP);
+        const helpPushBatch = shuffle(helpPushUsers.slice(0, MAX_HELP_PUSH_CANDIDATES_PER_SWEEP)).slice(0, MAX_HELP_PUSH_PER_SWEEP);
+        for (const [index, user] of unfinishedBatch.entries()) {
+            await staggerNotification(index);
             await maybeSendUnfinishedMotivationReminder(user);
         }
-        for (const user of helpPushUsers) {
+        for (const [index, user] of helpPushBatch.entries()) {
+            await staggerNotification(index);
             await maybeSendHelpPushReminder(user);
         }
     }
@@ -224,7 +253,6 @@ async function runNotificationReminderSweep() {
 function startNotificationReminderSweep() {
     if (sweepTimer)
         return;
-    void runNotificationReminderSweep();
     sweepTimer = setInterval(() => {
         void runNotificationReminderSweep();
     }, SWEEP_INTERVAL_MS);

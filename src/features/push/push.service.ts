@@ -1,23 +1,40 @@
 import { createMotivationMilestoneNotification, createMotivationPushNotification } from "../notification/notification.service";
 import { prisma } from "../../db/client";
+import { Prisma } from "@prisma/client";
+import { AppError } from "../../errors/AppError";
+import { HttpStatus } from "../../types/httpStatus";
 
 type TogglePushInput = {
   userId: string;
   taskId: string;
 };
 
-// 💪 Toggle push for a motivation task
+// 💪 Create a push for a motivation task. Repeated calls are idempotent.
 export async function togglePushForTask({
   userId,
   taskId,
 }: TogglePushInput) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { id: true, userId: true, type: true },
+    select: { id: true, userId: true, type: true, createdAt: true, completed: true },
   });
 
   if (!task || task.type !== "motivation") {
-    throw new Error("Task not found or is not a motivation type");
+    throw new AppError(
+      "Task not found or is not a motivation type",
+      HttpStatus.NOT_FOUND
+    );
+  }
+
+  if (task.userId === userId) {
+    throw new AppError("You cannot push your own task", HttpStatus.FORBIDDEN);
+  }
+
+  if (task.completed) {
+    throw new AppError(
+      "Completed tasks cannot receive pushes",
+      HttpStatus.CONFLICT
+    );
   }
 
   const existing = await prisma.push.findUnique({
@@ -26,45 +43,72 @@ export async function togglePushForTask({
     },
   });
 
-  let hasPushed: boolean;
-  let pushCount: number;
-
   if (existing) {
-    // 👎 Removing a push → NO notifications
-    await prisma.push.delete({
-      where: { id: existing.id },
+    const pushCount = await prisma.push.count({
+      where: { taskId, userId: { not: task.userId } },
     });
-
-    pushCount = await prisma.push.count({ where: { taskId } });
-    hasPushed = false;
-  } else {
-    // 👍 Adding a push
-    await prisma.push.create({
-      data: { userId, taskId },
-    });
-
-    pushCount = await prisma.push.count({ where: { taskId } });
-    hasPushed = true;
-
-    // 🔔 Normal motivation push notification (skip self)
-    await createMotivationPushNotification({
-      taskId,
-      taskOwnerId: task.userId,
-      pushedByUserId: userId,
-    });
-
-    // 🔥 Milestone check (skip self, use actual count)
-    if (userId !== task.userId) {
-      await createMotivationMilestoneNotification({
-        taskId,
-        taskOwnerId: task.userId,
-        pushCount,
-      });
-    }
+    return {
+      hasPushed: true,
+      pushCount,
+    };
   }
 
+  let pushCount: number;
+
+  try {
+    const pushedAt = new Date();
+    pushCount = await prisma.$transaction(async (tx) => {
+      const push = await tx.push.create({
+        data: { userId, taskId, createdAt: pushedAt },
+        select: { createdAt: true },
+      });
+
+      const nextCount = await tx.push.count({
+        where: { taskId, userId: { not: task.userId } },
+      });
+
+      await tx.task.update({
+        where: { id: taskId },
+        data: {
+          pushCount: nextCount,
+          latestActivityAt: push.createdAt,
+          isAlmostThere: nextCount >= 3,
+        },
+      });
+
+      return nextCount;
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      pushCount = await prisma.push.count({
+        where: { taskId, userId: { not: task.userId } },
+      });
+      return {
+        hasPushed: true,
+        pushCount,
+      };
+    }
+
+    throw error;
+  }
+
+  await createMotivationPushNotification({
+    taskId,
+    taskOwnerId: task.userId,
+    pushedByUserId: userId,
+  });
+
+  await createMotivationMilestoneNotification({
+    taskId,
+    taskOwnerId: task.userId,
+    pushCount,
+  });
+
   return {
-    hasPushed,
+    hasPushed: true,
     pushCount,
   };
 }
@@ -75,9 +119,19 @@ export async function getPushesForTask(
   userId: string,
 ) {
   const [pushCount, existing] = await Promise.all([
-    prisma.push.count({
-      where: { taskId },
-    }),
+    prisma.task
+      .findUnique({
+        where: { id: taskId },
+        select: { userId: true },
+      })
+      .then((task) =>
+        prisma.push.count({
+          where: {
+            taskId,
+            ...(task ? { userId: { not: task.userId } } : {}),
+          },
+        })
+      ),
     prisma.push.findUnique({
       where: {
         userId_taskId: { userId, taskId },

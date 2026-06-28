@@ -17,6 +17,8 @@ const referral_routes_1 = __importDefault(require("./features/referral/referral.
 const push_routes_1 = __importDefault(require("./features/push/push.routes"));
 const featureFlags_routes_1 = __importDefault(require("./features/featureFlags/featureFlags.routes"));
 const notificationReminderSweep_service_1 = require("./features/notification/notificationReminderSweep.service");
+const feedback_routes_1 = __importDefault(require("./features/feedback/feedback.routes"));
+const cheer_routes_1 = __importDefault(require("./features/cheer/cheer.routes"));
 const client_1 = require("./db/client");
 const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
@@ -44,6 +46,8 @@ app.use("/vote", vote_routes_1.default);
 app.use("/comments", comment_routes_1.default);
 app.use("/referrals", referral_routes_1.default);
 app.use("/features", featureFlags_routes_1.default);
+app.use("/feedback", feedback_routes_1.default);
+app.use("/beats", cheer_routes_1.default);
 // Push routes, we need Task here
 app.use("/tasks", push_routes_1.default);
 app.use(errorHandler_1.errorHandler);
@@ -52,7 +56,7 @@ async function startServer() {
     try {
         await client_1.prisma.$connect();
         (0, notificationReminderSweep_service_1.startNotificationReminderSweep)();
-        console.log("✅ Connected to the PostgreSQL database at:", process.env.DATABASE_URL);
+        console.log("✅ Connected to the PostgreSQL database");
         app.listen(PORT, "0.0.0.0", () => {
             console.log(`🚀 Server running on http://localhost:${PORT}`);
         });

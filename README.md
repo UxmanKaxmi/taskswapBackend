@@ -97,6 +97,46 @@ Note: Do not commit real secrets. Use placeholder values locally.
 - Development expects `firebase-adminsdk.json` at the repo root.
 - Production expects the service account at `/etc/secrets/firebase-adminsdk.json`.
 
+## Render Deployment
+
+This backend is deployed on Render as a Web Service connected to the GitHub repo:
+
+- Repository: `UxmanKaxmi/taskswapBackend`
+- Branch: `main`
+- Runtime: Node.js
+- Build command: `npm install && npm run build && npx prisma migrate deploy`
+- Start command: `npm start`
+- Health check path: `/health`
+
+The production database is hosted on Neon. Render should use the Neon direct PostgreSQL connection string for `DATABASE_URL`, including SSL settings when Neon provides them.
+
+Render should provide production environment variables directly in the service settings. Do not commit a real `.env.production` file.
+
+Required Render env vars:
+
+- `NODE_ENV=production`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `APP_WEB_ORIGIN`
+
+Optional Render env vars:
+
+- `FDL_DOMAIN_URI_PREFIX`
+- `FDL_API_KEY`
+- `IOS_BUNDLE_ID`
+- `ANDROID_PACKAGE`
+- `IOS_APP_STORE_ID`
+- `SEEDED_PUSHES_ENABLED`
+- `SEEDED_PUSH_MIN`
+- `SEEDED_PUSH_MAX`
+- `SEEDED_PEOPLE_API_URL`
+
+Render also needs the Firebase Admin service account uploaded as a Secret File at:
+
+```
+/etc/secrets/firebase-adminsdk.json
+```
+
 ## Database and Prisma
 
 - Schema: `prisma/schema.prisma`

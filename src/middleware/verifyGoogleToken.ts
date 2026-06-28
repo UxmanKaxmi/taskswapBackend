@@ -3,18 +3,6 @@ import { Request, Response, NextFunction } from "express";
 
 const client = new OAuth2Client();
 
-const getJwtHeader = (token: string): { alg?: string } | null => {
-  const header = token.split(".")[0];
-
-  if (!header) return null;
-
-  try {
-    return JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
-};
-
 export const verifyGoogleToken = async (
   req: Request,
   res: Response,
@@ -28,14 +16,6 @@ export const verifyGoogleToken = async (
   }
 
   const idToken = authHeader.split(" ")[1];
-
-  const jwtHeader = getJwtHeader(idToken);
-  if (jwtHeader?.alg === "HS256") {
-    res.status(401).json({
-      error: "Expected Google ID token, received app JWT",
-    });
-    return;
-  }
 
   try {
     const ticket = await client.verifyIdToken({
@@ -53,10 +33,20 @@ export const verifyGoogleToken = async (
 
     console.log("[✅ Verified Google User]", payload);
 
-    req.body.id = payload.sub;
-    req.body.email = payload.email || req.body.email;
-    req.body.name = payload.name || req.body.name || payload.email?.split("@")[0];
-    req.body.photo = payload.picture || req.body.photo;
+    const body = req.body ?? {};
+    const email = getNonEmptyString(payload.email) ?? getNonEmptyString(body.email);
+    const name =
+      getNonEmptyString(payload.name) ??
+      getNonEmptyString(body.name) ??
+      buildFallbackName(email);
+
+    req.body = {
+      ...body,
+      id: payload.sub,
+      email,
+      name,
+      photo: getNonEmptyString(payload.picture) ?? getNonEmptyString(body.photo) ?? "",
+    };
 
     next();
   } catch (err) {
@@ -64,3 +54,23 @@ export const verifyGoogleToken = async (
     res.status(401).json({ error: "Token verification failed" });
   }
 };
+
+function getNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function buildFallbackName(email?: string): string {
+  const localPart = email?.split("@")[0]?.trim();
+
+  if (!localPart) {
+    return "User";
+  }
+
+  return localPart
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, char => char.toUpperCase());
+}

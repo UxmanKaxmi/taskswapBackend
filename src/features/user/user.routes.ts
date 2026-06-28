@@ -30,9 +30,10 @@ router.get("/toggleFollow/:userId", requireAuth, handleToggleFollowUser);
 router.get("/followers", optionalAuth, handleGetFollowers);
 router.get("/following", optionalAuth, handleGetFollowing);
 
-// Profile of currently logged-in user
-router.get("/me/home-summary", optionalAuth, handleGetHomeSummary);
 router.get("/me", requireAuth, handleGetMe);
+
+// Home dashboard summary for the logged-in user
+router.get("/me/home-summary", requireAuth, handleGetHomeSummary);
 
 // Search friends (still requires auth)
 router.get("/search-friends", requireAuth, searchFriends);

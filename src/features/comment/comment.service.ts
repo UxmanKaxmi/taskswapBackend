@@ -6,7 +6,7 @@ import {
   createTaskAdviceNotification,
 } from "../notification/notification.service";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
-import { USER_ORIGIN } from "../seededUser/seededUser.service";
+import { getCommentMentionPushText } from "../../utils/notificationTextCatalog";
 
 export async function createComment(input: CreateCommentInput) {
   return prisma.$transaction(async (tx) => {
@@ -42,27 +42,22 @@ export async function createComment(input: CreateCommentInput) {
 
       // 🔔 Push notifications (non-transactional on purpose)
       const recipients = await tx.user.findMany({
-        where: { id: { in: mentionedIds }, origin: USER_ORIGIN.REAL },
+        where: { id: { in: mentionedIds } },
         select: { fcmToken: true },
       });
+      const commentMentionPushText = getCommentMentionPushText(input.text);
 
       await Promise.all(
         recipients
           .filter((u) => !!u.fcmToken)
           .map((u) =>
-            schedulePush(
-              0,
-              u.fcmToken!,
-              "💬 You were mentioned",
-              `${input.text.slice(0, 50)}...`,
-              {
-                notificationType: NOTIFICATION_TYPES.COMMENT,
-                taskId: input.taskId,
-                commentId: comment.id,
-                screen: "TaskDetail",
-                deeplinkPath: `/tasks/${input.taskId}`,
-              }
-            )
+            schedulePush(0, u.fcmToken!, commentMentionPushText.title, commentMentionPushText.body, {
+              notificationType: "comment",
+              taskId: input.taskId,
+              commentId: comment.id,
+              screen: "TaskDetail",
+              deeplinkPath: `/tasks/${input.taskId}`,
+            })
           )
       );
     }

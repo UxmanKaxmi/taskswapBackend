@@ -12,7 +12,7 @@ import {
   updateTask,
 } from "./task.service";
 import { BadRequestError } from "../../errors";
-import { CreateTaskInput } from "./task.types";
+import { CreateTaskInput, FeedSort } from "./task.types";
 import {
   taskProgressUpdateSchema,
   taskSchema,
@@ -123,11 +123,16 @@ export async function handleGetTasks(
         : undefined;
 
     const excludeSelf = req.query.excludeSelf === "true";
+    const sort =
+      typeof req.query.sort === "string" && req.query.sort.trim().length > 0
+        ? req.query.sort.trim()
+        : undefined;
 
     const paginated = await getAllTasks(userId, {
       limit,
       cursor: cursorQuery,
       excludeSelf,
+      sort: sort as FeedSort | undefined,
     });
 
     res.status(200).json({
@@ -167,10 +172,11 @@ export async function handleGetTaskById(
 
     // ❌ Your old version did NOT return after sending 404 → bug
     if (!task) {
-       res.status(404).json({ error: "Task not found" });
+      res.status(404).json({ error: "Task not found" });
+      return;
     }
 
-     res.status(200).json(task);
+    res.status(200).json(task);
   } catch (error) {
     console.error("[TASK_FETCH_BY_ID_ERROR]", error);
     next(error);
@@ -313,7 +319,8 @@ export async function handleGetTaskViewCount(
     const viewCount = await getTaskViewCount(id);
 
     if (viewCount === null) {
-       res.status(404).json({ error: "Task not found" });
+      res.status(404).json({ error: "Task not found" });
+      return;
     }
 
     res.json({ viewCount });

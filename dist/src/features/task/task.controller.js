@@ -88,10 +88,14 @@ async function handleGetTasks(req, res, next) {
             ? req.query.cursor.trim()
             : undefined;
         const excludeSelf = req.query.excludeSelf === "true";
+        const sort = typeof req.query.sort === "string" && req.query.sort.trim().length > 0
+            ? req.query.sort.trim()
+            : undefined;
         const paginated = await (0, task_service_1.getAllTasks)(userId, {
             limit,
             cursor: cursorQuery,
             excludeSelf,
+            sort: sort,
         });
         res.status(200).json({
             data: paginated.tasks,
@@ -124,6 +128,7 @@ async function handleGetTaskById(req, res, next) {
         // ❌ Your old version did NOT return after sending 404 → bug
         if (!task) {
             res.status(404).json({ error: "Task not found" });
+            return;
         }
         res.status(200).json(task);
     }
@@ -235,6 +240,7 @@ async function handleGetTaskViewCount(req, res, next) {
         const viewCount = await (0, task_service_1.getTaskViewCount)(id);
         if (viewCount === null) {
             res.status(404).json({ error: "Task not found" });
+            return;
         }
         res.json({ viewCount });
     }

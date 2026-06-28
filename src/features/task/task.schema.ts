@@ -1,11 +1,26 @@
 import { z } from "zod";
+import { FEELING_TAGS } from "./task.types";
 
 const helpersSchema = z.array(z.string()).optional();
+
+const normalizeFeelingTag = (value: unknown) => {
+  if (value === null || value === undefined || value === "") return value;
+  if (typeof value !== "string") return value;
+
+  const slug = value.trim().toLowerCase().replace(/\s+/g, "_");
+  return slug;
+};
+
+const feelingSchema = z.preprocess(
+  normalizeFeelingTag,
+  z.enum(FEELING_TAGS).nullable().optional()
+);
 
 export const baseTaskSchema = z.object({
   text: z.string().min(1),
   type: z.enum(["reminder", "decision", "motivation", "advice"]),
   avatar: z.string().optional(),
+  feeling: feelingSchema,
 });
 
 export const reminderTaskSchema = baseTaskSchema.extend({
@@ -61,6 +76,7 @@ const baseUpdateSchema = z.object({
   type: z.enum(["reminder", "decision", "motivation", "advice"]).optional(),
   avatar: z.string().optional(),
   name: z.string().optional(),
+  feeling: feelingSchema,
 });
 
 const reminderUpdateSchema = baseUpdateSchema.extend({

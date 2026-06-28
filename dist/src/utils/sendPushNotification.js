@@ -19,11 +19,6 @@ if (!firebase_admin_1.default.apps.length) {
 }
 async function sendPushNotification(token, title, body, data) {
     console.log("📲 Sending push to:", token, title, body);
-    const normalizedData = data
-        ? Object.fromEntries(Object.entries(data)
-            .filter(([, value]) => value !== undefined && value !== null)
-            .map(([key, value]) => [key, String(value)]))
-        : undefined;
     try {
         await firebase_admin_1.default.messaging().send({
             token,
@@ -31,7 +26,7 @@ async function sendPushNotification(token, title, body, data) {
                 title,
                 body,
             },
-            data: normalizedData,
+            ...(data ? { data } : {}),
         });
         console.log("✅ Notification sent");
     }

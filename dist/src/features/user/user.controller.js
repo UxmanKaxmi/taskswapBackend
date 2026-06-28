@@ -18,7 +18,6 @@ const errors_1 = require("../../errors");
 const AppError_1 = require("../../errors/AppError");
 const user_service_2 = require("./user.service");
 const params_1 = require("../../utils/params");
-const touchUserActivity_1 = require("../../utils/touchUserActivity");
 const user_service_3 = require("./user.service");
 async function handleSyncUser(req, res, next) {
     const { id, email, name, photo, fcmToken } = req.body;
@@ -29,7 +28,6 @@ async function handleSyncUser(req, res, next) {
     }
     try {
         const user = await (0, user_service_1.syncUserToDB)({ id, email, name, photo, fcmToken });
-        void (0, touchUserActivity_1.touchUserActivity)(user.id);
         console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
         const token = jsonwebtoken_1.default.sign({ userId: user.id }, process.env.JWT_SECRET, {
             expiresIn: "7d",
@@ -39,7 +37,7 @@ async function handleSyncUser(req, res, next) {
     }
     catch (error) {
         console.error("[USER_API_ERROR]", error);
-        next(error instanceof AppError_1.AppError ? error : new AppError_1.AppError("Failed to sync user", 500));
+        next(new AppError_1.AppError("Failed to sync user", 500));
     }
 }
 async function handleMatchUsers(req, res, next) {
@@ -172,23 +170,24 @@ async function handleGetMe(req, res, next) {
 async function handleGetHomeSummary(req, res, next) {
     try {
         const userId = req.user?.id;
-        if (!userId) {
-            res.status(200).json({
-                modules: {
-                    successStory: null,
-                    needsYourPush: null,
-                    updateProgress: null,
-                    adviceRequestWaitingOnYou: null,
-                },
-            });
-            return;
-        }
-        const summary = await (0, user_service_3.getHomeSummaryForUser)(userId);
+        if (!userId)
+            return next(new AppError_1.AppError("Unauthorized", 401));
+        const utcOffsetMinutes = parseUtcOffsetMinutes(req.query.utcOffsetMinutes);
+        const summary = await (0, user_service_3.getHomeSummaryForUser)(userId, utcOffsetMinutes);
         res.status(200).json(summary);
     }
     catch (err) {
-        next(err instanceof AppError_1.AppError ? err : new AppError_1.AppError("Failed to fetch home summary", 500));
+        console.error("[HOME_SUMMARY_ERROR]", err);
+        next(new AppError_1.AppError("Failed to fetch home summary", 500));
     }
+}
+function parseUtcOffsetMinutes(value) {
+    const raw = (0, params_1.getParamString)(value);
+    const parsed = raw ? Number(raw) : 0;
+    if (!Number.isFinite(parsed)) {
+        return 0;
+    }
+    return Math.max(-14 * 60, Math.min(14 * 60, Math.trunc(parsed)));
 }
 async function searchFriends(req, res, next) {
     const { query, includeFollowed = "false" } = req.query;

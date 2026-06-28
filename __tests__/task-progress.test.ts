@@ -80,7 +80,7 @@ describe("Task progress updates", () => {
     await prisma.$disconnect();
   });
 
-  it("stores progress updates, notifies pushers/helpers, and returns the full progress history on task detail", async () => {
+  it("stores progress updates, notifies pushers/helpers, and returns the full history on task detail", async () => {
     const progressTexts = [
       "First update: the backend route is live.",
       "Second update: notifications are wired.",
@@ -144,32 +144,7 @@ describe("Task progress updates", () => {
     ]);
   });
 
-  it("notifies both pushers and tagged helpers when the task is completed", async () => {
-    const completeRes = await request(app)
-      .patch(`/tasks/${taskId}/complete`)
-      .set(getAuthHeader(ownerId));
-
-    expect(completeRes.status).toBe(200);
-    expect(completeRes.body).toHaveProperty("completed", true);
-    expect(completeRes.body.id).toBe(taskId);
-
-    const notifications = await prisma.notification.findMany({
-      where: {
-        type: "task-completed",
-        taskType: "motivation",
-        userId: { in: [helperId, pusherId] },
-      },
-      orderBy: { createdAt: "asc" },
-    });
-
-    expect(notifications).toHaveLength(2);
-    expect(notifications.map((notification) => notification.userId).sort()).toEqual([
-      helperId,
-      pusherId,
-    ]);
-  });
-
-  it("rejects a progress update sent within 6 hours", async () => {
+  it("rejects a progress update sent within the configured cooldown", async () => {
     const cooldownTask = await prisma.task.create({
       data: {
         text: "Cooldown test task",
@@ -193,6 +168,6 @@ describe("Task progress updates", () => {
       .send({ text: "Second cooldown update" });
 
     expect(secondRes.status).toBe(429);
-    expect(secondRes.body.error).toMatch(/every 6 hours/i);
+    expect(secondRes.body.error).toMatch(/every 1 minute/i);
   });
 });

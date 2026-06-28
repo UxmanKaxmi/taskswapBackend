@@ -1,5 +1,6 @@
 // src/features/referral/referral.service.ts
 import { prisma } from "../../db/client";
+import { getReferralShareText } from "../../utils/notificationTextCatalog";
 import { v4 as uuidv4 } from "uuid";
 import { $Enums } from "@prisma/client";
 import {
@@ -94,10 +95,7 @@ export async function getReferralLink(
     link: short, // <-- return the short page.link
     refCode: code.code,
     stats,
-    share: {
-      message: "Join me on Push Me Up — manage and share your tasks easily!",
-      title: "Invite to Push Me Up",
-    },
+    share: getReferralShareText(),
   };
 }
 
