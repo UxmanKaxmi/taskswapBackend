@@ -6,6 +6,7 @@ const sendPushNotification_1 = require("../../utils/sendPushNotification");
 const client_1 = require("../../db/client");
 const errors_1 = require("../../errors");
 const notificationTypes_1 = require("../../types/notificationTypes");
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 async function sendReminderNote({ taskId, senderId, message, }) {
     if (!message?.trim()) {
         throw new errors_1.BadRequestError("Reminder message cannot be empty.");
@@ -25,7 +26,14 @@ async function sendReminderNote({ taskId, senderId, message, }) {
         throw new errors_1.BadRequestError("You cannot remind yourself.");
     // Notify task owner via push
     if (task.user?.fcmToken) {
-        await (0, sendPushNotification_1.sendPushNotification)(task.user.fcmToken, "⏰ You got a reminder!", message);
+        const { title, body } = (0, notificationTextCatalog_1.getReminderNoteNotificationText)(message);
+        await (0, sendPushNotification_1.sendPushNotification)(task.user.fcmToken, title, body, {
+            notificationType: "reminder",
+            taskId,
+            taskType: task.type,
+            screen: "TaskDetail",
+            deeplinkPath: `/tasks/${taskId}`,
+        });
     }
     // Prevent duplicate reminders from same user
     const existing = await client_1.prisma.reminderNote.findFirst({
@@ -48,7 +56,7 @@ async function sendReminderNote({ taskId, senderId, message, }) {
             senderId,
             type: notificationTypes_1.NOTIFICATION_TYPES.REMINDER,
             taskType: task.type,
-            message: `${sender?.name ?? "Someone"} reminded you about your task.`,
+            message: (0, notificationTextCatalog_1.getReminderReceivedNotificationMessage)(sender?.name ?? "Someone"),
             metadata: {
                 taskId,
                 senderId,

@@ -64,7 +64,10 @@ type TaskProgressUpdateSummary = {
   createdAt: string;
 };
 
-const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const PROGRESS_UPDATE_COOLDOWN_MS =
+  process.env.NODE_ENV === "production" ? 6 * HOUR_MS : MINUTE_MS;
 
 type TaskPushHistoryItem = {
   createdAt: Date;
@@ -107,6 +110,20 @@ function toProgressUpdateSummary(
     text: progressUpdate.text,
     createdAt: progressUpdate.createdAt.toISOString(),
   };
+}
+
+function getProgressUpdateCooldownMessage(remainingMs: number) {
+  if (PROGRESS_UPDATE_COOLDOWN_MS < HOUR_MS) {
+    const remainingMinutes = Math.ceil(remainingMs / MINUTE_MS);
+    return `You can only share a progress update every 1 minute. Try again in about ${remainingMinutes} minute${
+      remainingMinutes === 1 ? "" : "s"
+    }.`;
+  }
+
+  const remainingHours = Math.ceil(remainingMs / HOUR_MS);
+  return `You can only share a progress update every 6 hours. Try again in about ${remainingHours} hour${
+    remainingHours === 1 ? "" : "s"
+  }.`;
 }
 
 
@@ -953,14 +970,10 @@ export async function shareTaskProgress(
   const latestProgressUpdate = task.progressUpdates[0];
   if (latestProgressUpdate) {
     const elapsedMs = Date.now() - latestProgressUpdate.createdAt.getTime();
-    if (elapsedMs < SIX_HOURS_MS) {
-      const remainingHours = Math.ceil(
-        (SIX_HOURS_MS - elapsedMs) / (60 * 60 * 1000)
-      );
+    if (elapsedMs < PROGRESS_UPDATE_COOLDOWN_MS) {
+      const remainingMs = PROGRESS_UPDATE_COOLDOWN_MS - elapsedMs;
       throw new AppError(
-        `You can only share a progress update every 6 hours. Try again in about ${remainingHours} hour${
-          remainingHours === 1 ? "" : "s"
-        }.`,
+        getProgressUpdateCooldownMessage(remainingMs),
         HttpStatus.TOO_MANY_REQUESTS
       );
     }

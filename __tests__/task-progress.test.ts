@@ -144,7 +144,7 @@ describe("Task progress updates", () => {
     ]);
   });
 
-  it("rejects a progress update sent within 6 hours", async () => {
+  it("rejects a progress update sent within the configured cooldown", async () => {
     const cooldownTask = await prisma.task.create({
       data: {
         text: "Cooldown test task",
@@ -168,6 +168,6 @@ describe("Task progress updates", () => {
       .send({ text: "Second cooldown update" });
 
     expect(secondRes.status).toBe(429);
-    expect(secondRes.body.error).toMatch(/every 6 hours/i);
+    expect(secondRes.body.error).toMatch(/every 1 minute/i);
   });
 });

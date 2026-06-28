@@ -11,11 +11,13 @@ exports.getFollowersCount = getFollowersCount;
 exports.getFollowingCount = getFollowingCount;
 exports.getTaskStatsForUser = getTaskStatsForUser;
 exports.searchFriendsService = searchFriendsService;
+exports.getHomeSummaryForUser = getHomeSummaryForUser;
 exports.getUserProfileById = getUserProfileById;
 const client_1 = require("../../db/client");
 const AppError_1 = require("../../errors/AppError");
 const httpStatus_1 = require("../../types/httpStatus");
 const task_service_1 = require("../task/task.service");
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 async function syncUserToDB({ id, email, name, photo, fcmToken, }) {
     return client_1.prisma.user.upsert({
         where: { id },
@@ -62,6 +64,7 @@ async function matchUsersByEmail(emails, followerId) {
             id: true,
             email: true,
             name: true,
+            username: true,
             photo: true,
         },
     });
@@ -121,7 +124,7 @@ async function toggleFollowUser(followerId, followingId) {
                 userId: followingId,
                 senderId: followerId,
                 type: "follow",
-                message: `${follower?.name ?? "Someone"} followed you`,
+                message: (0, notificationTextCatalog_1.getFollowNotificationMessage)(follower?.name ?? "Someone"),
                 metadata: {
                     followerId,
                     followerName: follower?.name,
@@ -147,6 +150,7 @@ async function getFollowers(userId) {
                 select: {
                     id: true,
                     name: true,
+                    username: true,
                     email: true,
                     photo: true,
                 },
@@ -182,6 +186,7 @@ async function getFollowing(userId) {
                 select: {
                     id: true,
                     name: true,
+                    username: true,
                     email: true,
                     photo: true,
                 },
@@ -205,6 +210,7 @@ async function getUserById(userId) {
             id: true,
             name: true,
             email: true,
+            username: true,
             photo: true,
             createdAt: true,
         },
@@ -268,6 +274,7 @@ async function searchFriendsService(userId, query, includeFollowed) {
         select: {
             id: true,
             name: true,
+            username: true,
             email: true,
             photo: true,
         },
@@ -279,6 +286,205 @@ async function searchFriendsService(userId, query, includeFollowed) {
         ...user,
         isFollowing: followingIdSet.has(user.id),
     }));
+}
+async function getHomeSummaryForUser(userId, utcOffsetMinutes = 0) {
+    // Who the current user follows — the home feed only cares about these people.
+    const [following, compactStatus, ownGoal] = await Promise.all([
+        client_1.prisma.follow.findMany({
+            where: { followerId: userId },
+            select: { followingId: true },
+        }),
+        getHomeCompactStatusForUser(userId, utcOffsetMinutes),
+        // The user's own most recent active goal — authoritative source for the
+        // "Your goal" card (decoupled from the shared "needs a push" feed).
+        client_1.prisma.task.findFirst({
+            where: { userId, type: "motivation", completed: false, completedAt: null },
+            orderBy: { createdAt: "desc" },
+            select: {
+                id: true,
+                text: true,
+                pushCount: true,
+                createdAt: true,
+                _count: { select: { progressUpdates: true } },
+            },
+        }),
+    ]);
+    const followingIds = following.map((f) => f.followingId);
+    const yourGoal = ownGoal
+        ? {
+            taskId: ownGoal.id,
+            text: ownGoal.text,
+            pushCount: ownGoal.pushCount,
+            createdAt: ownGoal.createdAt.toISOString(),
+            progressCount: ownGoal._count.progressUpdates,
+        }
+        : null;
+    // No one followed yet → empty but valid summary.
+    if (followingIds.length === 0) {
+        return {
+            yourGoal,
+            summaryCounts: { peopleNeedYourPushToday: 0, replyWaitingCount: 0 },
+            compactStatus,
+            modules: null,
+            successStory: null,
+            heroModule: null,
+            peopleNeedYourPushToday: 0,
+            replyWaitingCount: 0,
+            featuredStory: null,
+        };
+    }
+    const [pushableTasks, pushedCompleted] = await Promise.all([
+        // Active motivation tasks from followed users the current user hasn't pushed yet.
+        client_1.prisma.task.findMany({
+            where: {
+                userId: { in: followingIds },
+                completed: false,
+                isPublic: true,
+                type: "motivation",
+                Push: { none: { userId } },
+            },
+            select: { userId: true },
+        }),
+        // Most recent completed motivation task the current user pushed → success story.
+        client_1.prisma.task.findFirst({
+            where: {
+                completed: true,
+                completedAt: { not: null },
+                userId: { in: followingIds },
+                type: "motivation",
+                Push: { some: { userId } },
+            },
+            orderBy: { completedAt: "desc" },
+            include: {
+                user: { select: { id: true, name: true, photo: true } },
+                Push: { where: { userId }, select: { createdAt: true }, take: 1 },
+            },
+        }),
+    ]);
+    const peopleNeedYourPushToday = new Set(pushableTasks.map((t) => t.userId)).size;
+    // Reply/advice/decision mechanics are deprecated (motivation-only product).
+    // Field kept for the mobile contract; always 0 now.
+    const replyWaitingCount = 0;
+    let successStory = null;
+    let featuredStory = null;
+    if (pushedCompleted && pushedCompleted.completedAt) {
+        const owner = pushedCompleted.user;
+        const pushedAt = pushedCompleted.Push[0]?.createdAt ?? null;
+        const entity = {
+            type: "task",
+            taskId: pushedCompleted.id,
+            taskText: pushedCompleted.text,
+            ownerId: owner.id,
+            ownerName: owner.name,
+            ownerPhoto: owner.photo ?? null,
+        };
+        successStory = {
+            type: "success_story",
+            title: `${owner.name} pulled it off`,
+            body: `Your push helped ${owner.name} finish their task.`,
+            entity,
+            timestamps: {
+                contributedAt: (pushedAt ?? pushedCompleted.completedAt).toISOString(),
+                resultAt: pushedCompleted.completedAt.toISOString(),
+            },
+        };
+        featuredStory = {
+            type: "motivation-success",
+            taskId: pushedCompleted.id,
+            taskText: pushedCompleted.text,
+            ownerId: owner.id,
+            ownerName: owner.name,
+            ownerPhoto: owner.photo ?? null,
+            pushedAt: pushedAt ? pushedAt.toISOString() : null,
+            completedAt: pushedCompleted.completedAt.toISOString(),
+        };
+    }
+    return {
+        yourGoal,
+        summaryCounts: { peopleNeedYourPushToday, replyWaitingCount },
+        compactStatus,
+        modules: successStory ? { successStory } : null,
+        successStory,
+        heroModule: successStory,
+        peopleNeedYourPushToday,
+        replyWaitingCount,
+        featuredStory,
+    };
+}
+async function getHomeCompactStatusForUser(userId, utcOffsetMinutes) {
+    const now = new Date();
+    const todayRange = getUtcRangeForLocalDate(now, utcOffsetMinutes);
+    const since = new Date(todayRange.start.getTime() - 370 * 24 * 60 * 60 * 1000);
+    const [pushedTodayCount, recentPushes] = await Promise.all([
+        client_1.prisma.push.count({
+            where: {
+                userId,
+                createdAt: {
+                    gte: todayRange.start,
+                    lt: todayRange.end,
+                },
+                task: {
+                    type: "motivation",
+                    userId: { not: userId },
+                },
+            },
+        }),
+        client_1.prisma.push.findMany({
+            where: {
+                userId,
+                createdAt: { gte: since },
+                task: {
+                    type: "motivation",
+                    userId: { not: userId },
+                },
+            },
+            select: { createdAt: true },
+            orderBy: { createdAt: "desc" },
+        }),
+    ]);
+    const pushDayKeys = new Set(recentPushes.map((push) => getLocalDateKey(push.createdAt, utcOffsetMinutes)));
+    const todayKey = getLocalDateKey(now, utcOffsetMinutes);
+    if (!pushDayKeys.has(todayKey)) {
+        return { streakDay: 0, pushedTodayCount: 0 };
+    }
+    const localCursor = getLocalDateParts(now, utcOffsetMinutes);
+    const cursorDate = new Date(Date.UTC(localCursor.year, localCursor.month, localCursor.day));
+    let streakDay = 0;
+    while (pushDayKeys.has(toDateKey(cursorDate))) {
+        streakDay += 1;
+        cursorDate.setUTCDate(cursorDate.getUTCDate() - 1);
+    }
+    return { streakDay, pushedTodayCount };
+}
+function getUtcRangeForLocalDate(date, utcOffsetMinutes) {
+    const parts = getLocalDateParts(date, utcOffsetMinutes);
+    const start = new Date(Date.UTC(parts.year, parts.month, parts.day) -
+        utcOffsetMinutes * 60 * 1000);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    return { start, end };
+}
+function getLocalDateKey(date, utcOffsetMinutes) {
+    const parts = getLocalDateParts(date, utcOffsetMinutes);
+    return [
+        String(parts.year).padStart(4, "0"),
+        String(parts.month + 1).padStart(2, "0"),
+        String(parts.day).padStart(2, "0"),
+    ].join("-");
+}
+function getLocalDateParts(date, utcOffsetMinutes) {
+    const shifted = new Date(date.getTime() + utcOffsetMinutes * 60 * 1000);
+    return {
+        year: shifted.getUTCFullYear(),
+        month: shifted.getUTCMonth(),
+        day: shifted.getUTCDate(),
+    };
+}
+function toDateKey(date) {
+    return [
+        String(date.getUTCFullYear()).padStart(4, "0"),
+        String(date.getUTCMonth() + 1).padStart(2, "0"),
+        String(date.getUTCDate()).padStart(2, "0"),
+    ].join("-");
 }
 async function getUserProfileById(targetUserId, currentUserId) {
     const user = await getUserById(targetUserId);
@@ -318,7 +524,7 @@ async function getUserProfileById(targetUserId, currentUserId) {
     return {
         id: user.id,
         name: user.name,
-        email: user.email,
+        username: user.username,
         photo: user.photo,
         bio: null,
         followersCount,

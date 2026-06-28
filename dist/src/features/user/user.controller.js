@@ -9,6 +9,7 @@ exports.handleToggleFollowUser = handleToggleFollowUser;
 exports.handleGetFollowers = handleGetFollowers;
 exports.handleGetFollowing = handleGetFollowing;
 exports.handleGetMe = handleGetMe;
+exports.handleGetHomeSummary = handleGetHomeSummary;
 exports.searchFriends = searchFriends;
 exports.handleGetUserProfile = handleGetUserProfile;
 const user_service_1 = require("./user.service");
@@ -165,6 +166,28 @@ async function handleGetMe(req, res, next) {
     catch (err) {
         next(new AppError_1.AppError("Failed to fetch user profile", 500));
     }
+}
+async function handleGetHomeSummary(req, res, next) {
+    try {
+        const userId = req.user?.id;
+        if (!userId)
+            return next(new AppError_1.AppError("Unauthorized", 401));
+        const utcOffsetMinutes = parseUtcOffsetMinutes(req.query.utcOffsetMinutes);
+        const summary = await (0, user_service_3.getHomeSummaryForUser)(userId, utcOffsetMinutes);
+        res.status(200).json(summary);
+    }
+    catch (err) {
+        console.error("[HOME_SUMMARY_ERROR]", err);
+        next(new AppError_1.AppError("Failed to fetch home summary", 500));
+    }
+}
+function parseUtcOffsetMinutes(value) {
+    const raw = (0, params_1.getParamString)(value);
+    const parsed = raw ? Number(raw) : 0;
+    if (!Number.isFinite(parsed)) {
+        return 0;
+    }
+    return Math.max(-14 * 60, Math.min(14 * 60, Math.trunc(parsed)));
 }
 async function searchFriends(req, res, next) {
     const { query, includeFollowed = "false" } = req.query;

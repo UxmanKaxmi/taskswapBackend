@@ -5,6 +5,7 @@ exports.startNotificationReminderSweep = startNotificationReminderSweep;
 const client_1 = require("../../db/client");
 const notificationTypes_1 = require("../../types/notificationTypes");
 const sendPushNotification_1 = require("../../utils/sendPushNotification");
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 const seededUser_service_1 = require("../seededUser/seededUser.service");
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -60,19 +61,19 @@ function buildInactivityNotificationWhere(userId, taskId) {
     };
 }
 async function sendUnfinishedMotivationReminder(user, task) {
-    const message = `Your motivation "${task.text}" still needs attention.`;
+    const { title, body } = (0, notificationTextCatalog_1.getUnfinishedMotivationReminderText)(task.text);
     await client_1.prisma.notification.create({
         data: {
             userId: user.id,
             senderId: null,
             type: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
             taskType: "motivation",
-            message,
+            message: body,
             metadata: buildTaskMetadata(task.id, task.text),
         },
     });
     if (user.fcmToken) {
-        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, "Keep going", message, {
+        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, title, body, {
             notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_UNFINISHED_REMINDER,
             taskId: task.id,
             taskType: "motivation",
@@ -82,23 +83,21 @@ async function sendUnfinishedMotivationReminder(user, task) {
     }
 }
 async function sendHelpPushReminder(user, taskCount) {
-    const message = taskCount === 1
-        ? "One motivation task is waiting for your push."
-        : `${taskCount} motivation tasks are waiting for your push.`;
+    const { title, body } = (0, notificationTextCatalog_1.getHelpPushReminderNotificationText)(taskCount);
     await client_1.prisma.notification.create({
         data: {
             userId: user.id,
             senderId: null,
             type: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
             taskType: "motivation",
-            message,
+            message: body,
             metadata: {
                 taskCount,
             },
         },
     });
     if (user.fcmToken) {
-        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, "Help someone push", message, {
+        await (0, sendPushNotification_1.sendPushNotification)(user.fcmToken, title, body, {
             notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_HELP_PUSH_REMINDER,
             taskType: "motivation",
             screen: "Home",

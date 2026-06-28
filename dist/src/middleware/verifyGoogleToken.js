@@ -21,10 +21,18 @@ const verifyGoogleToken = async (req, res, next) => {
             return;
         }
         console.log("[✅ Verified Google User]", payload);
-        req.body.id = payload.sub;
-        req.body.email = payload.email;
-        req.body.name = payload.name;
-        req.body.photo = payload.picture;
+        const body = req.body ?? {};
+        const email = getNonEmptyString(payload.email) ?? getNonEmptyString(body.email);
+        const name = getNonEmptyString(payload.name) ??
+            getNonEmptyString(body.name) ??
+            buildFallbackName(email);
+        req.body = {
+            ...body,
+            id: payload.sub,
+            email,
+            name,
+            photo: getNonEmptyString(payload.picture) ?? getNonEmptyString(body.photo) ?? "",
+        };
         next();
     }
     catch (err) {
@@ -33,3 +41,19 @@ const verifyGoogleToken = async (req, res, next) => {
     }
 };
 exports.verifyGoogleToken = verifyGoogleToken;
+function getNonEmptyString(value) {
+    return typeof value === "string" && value.trim().length > 0
+        ? value.trim()
+        : undefined;
+}
+function buildFallbackName(email) {
+    const localPart = email?.split("@")[0]?.trim();
+    if (!localPart) {
+        return "User";
+    }
+    return localPart
+        .replace(/[._-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\b\w/g, char => char.toUpperCase());
+}

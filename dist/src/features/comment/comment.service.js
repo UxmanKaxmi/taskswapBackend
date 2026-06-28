@@ -6,6 +6,7 @@ exports.toggleCommentLike = toggleCommentLike;
 const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const client_1 = require("../../db/client");
 const notification_service_1 = require("../notification/notification.service");
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 async function createComment(input) {
     return client_1.prisma.$transaction(async (tx) => {
         // 1️⃣ Create comment
@@ -37,9 +38,16 @@ async function createComment(input) {
                 where: { id: { in: mentionedIds } },
                 select: { fcmToken: true },
             });
+            const commentMentionPushText = (0, notificationTextCatalog_1.getCommentMentionPushText)(input.text);
             await Promise.all(recipients
                 .filter((u) => !!u.fcmToken)
-                .map((u) => (0, scheduleReminderPush_1.schedulePush)(0, u.fcmToken, "💬 You were mentioned", `${input.text.slice(0, 50)}...`)));
+                .map((u) => (0, scheduleReminderPush_1.schedulePush)(0, u.fcmToken, commentMentionPushText.title, commentMentionPushText.body, {
+                notificationType: "comment",
+                taskId: input.taskId,
+                commentId: comment.id,
+                screen: "TaskDetail",
+                deeplinkPath: `/tasks/${input.taskId}`,
+            })));
         }
         return comment;
     });

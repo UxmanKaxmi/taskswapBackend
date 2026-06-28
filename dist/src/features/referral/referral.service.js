@@ -10,6 +10,7 @@ exports.rotateReferralLink = rotateReferralLink;
 exports.attributeReferral = attributeReferral;
 // src/features/referral/referral.service.ts
 const client_1 = require("../../db/client");
+const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 const uuid_1 = require("uuid");
 const client_2 = require("@prisma/client");
 const fdl_1 = require("../../utils/fdl");
@@ -75,10 +76,7 @@ async function getReferralLink(userId, channel = "GENERIC") {
         link: short, // <-- return the short page.link
         refCode: code.code,
         stats,
-        share: {
-            message: "Join me on Push Me Up — manage and share your tasks easily!",
-            title: "Invite to Push Me Up",
-        },
+        share: (0, notificationTextCatalog_1.getReferralShareText)(),
     };
 }
 async function rotateReferralLink(userId) {

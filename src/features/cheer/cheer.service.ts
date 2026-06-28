@@ -269,6 +269,8 @@ async function createOrUpdateCheerNotification(
         metadata,
       },
     });
+
+    return null;
   } else {
     await tx.notification.create({
       data: {

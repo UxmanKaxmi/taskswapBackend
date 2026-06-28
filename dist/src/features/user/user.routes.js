@@ -17,6 +17,8 @@ router.get("/followers", optionalAuth_1.optionalAuth, user_controller_1.handleGe
 router.get("/following", optionalAuth_1.optionalAuth, user_controller_1.handleGetFollowing);
 // Profile of currently logged-in user
 router.get("/me", requireAuth_1.requireAuth, user_controller_1.handleGetMe);
+// Home dashboard summary for the logged-in user
+router.get("/me/home-summary", requireAuth_1.requireAuth, user_controller_1.handleGetHomeSummary);
 // Search friends (still requires auth)
 router.get("/search-friends", requireAuth_1.requireAuth, user_controller_1.searchFriends);
 // ⭐ PUBLIC PROFILE VIEW — FIXED

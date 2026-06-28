@@ -7,6 +7,7 @@ exports.handleGetTaskById = handleGetTaskById;
 exports.handleDeleteTask = handleDeleteTask;
 exports.handleMarkTaskAsDone = handleMarkTaskAsDone;
 exports.handleMarkTaskNotDone = handleMarkTaskNotDone;
+exports.handleShareTaskProgress = handleShareTaskProgress;
 exports.handleGetTaskViewCount = handleGetTaskViewCount;
 exports.handleIncreaseTaskViewCount = handleIncreaseTaskViewCount;
 const task_service_1 = require("./task.service");
@@ -87,10 +88,14 @@ async function handleGetTasks(req, res, next) {
             ? req.query.cursor.trim()
             : undefined;
         const excludeSelf = req.query.excludeSelf === "true";
+        const sort = typeof req.query.sort === "string" && req.query.sort.trim().length > 0
+            ? req.query.sort.trim()
+            : undefined;
         const paginated = await (0, task_service_1.getAllTasks)(userId, {
             limit,
             cursor: cursorQuery,
             excludeSelf,
+            sort: sort,
         });
         res.status(200).json({
             data: paginated.tasks,
@@ -123,6 +128,7 @@ async function handleGetTaskById(req, res, next) {
         // ❌ Your old version did NOT return after sending 404 → bug
         if (!task) {
             res.status(404).json({ error: "Task not found" });
+            return;
         }
         res.status(200).json(task);
     }
@@ -194,6 +200,36 @@ async function handleMarkTaskNotDone(req, res, next) {
         next(error);
     }
 }
+/* -------------------------------------------------------
+   SHARE PROGRESS UPDATE (AUTH REQUIRED)
+---------------------------------------------------------*/
+async function handleShareTaskProgress(req, res, next) {
+    const taskId = (0, params_1.getParamString)(req.params.id);
+    const userId = req.user?.id;
+    if (!userId) {
+        return next(new errors_1.BadRequestError("User ID is required"));
+    }
+    if (!taskId) {
+        return next(new errors_1.BadRequestError("Task ID is required"));
+    }
+    try {
+        const parsed = task_schema_1.taskProgressUpdateSchema.parse(req.body);
+        const progressUpdate = await (0, task_service_1.shareTaskProgress)(taskId, userId, parsed.text);
+        res.status(201).json({
+            progressUpdates: [progressUpdate],
+        });
+    }
+    catch (error) {
+        console.error("[TASK_PROGRESS_UPDATE_ERROR]", error);
+        if (error instanceof zod_1.ZodError) {
+            res.status(400).json({
+                error: "Validation error",
+                issues: error.errors,
+            });
+        }
+        next(error);
+    }
+}
 async function handleGetTaskViewCount(req, res, next) {
     try {
         const id = (0, params_1.getParamString)(req.params.id);
@@ -204,6 +240,7 @@ async function handleGetTaskViewCount(req, res, next) {
         const viewCount = await (0, task_service_1.getTaskViewCount)(id);
         if (viewCount === null) {
             res.status(404).json({ error: "Task not found" });
+            return;
         }
         res.json({ viewCount });
     }

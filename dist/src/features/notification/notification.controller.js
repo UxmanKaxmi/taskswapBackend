@@ -50,12 +50,15 @@ async function handleBatchMarkNotificationsAsRead(req, res, next) {
 }
 async function handleTestSendNotification(req, res, next) {
     try {
-        const { userId, title = "Test Notification", body = "🚀 This is a test.", } = req.body;
+        const { userId, title = "Test Notification", body = "🚀 This is a test.", data, } = req.body;
         if (!userId) {
             res.status(400).json({ message: "Missing userId" });
             return;
         }
-        await (0, notification_service_1.sendTestNotification)(userId, title, body);
+        const notificationData = data && typeof data === "object" && !Array.isArray(data)
+            ? Object.fromEntries(Object.entries(data).filter(([, value]) => typeof value === "string" || typeof value === "number").map(([key, value]) => [key, String(value)]))
+            : undefined;
+        await (0, notification_service_1.sendTestNotification)(userId, title, body, notificationData);
         res.status(200).json({ message: "Notification sent successfully" });
     }
     catch (error) {
