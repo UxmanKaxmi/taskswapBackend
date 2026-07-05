@@ -46,17 +46,18 @@ async function getUserNotifications(userId) {
     });
 }
 // ✅ Mark a single notification as read
-async function markNotificationAsRead(notificationId) {
-    return client_1.prisma.notification.update({
-        where: { id: notificationId },
+async function markNotificationAsRead(notificationId, userId) {
+    return client_1.prisma.notification.updateMany({
+        where: { id: notificationId, userId },
         data: { read: true },
     });
 }
 // ✅ Mark multiple notifications as read (batch)
-async function markNotificationsAsRead(notificationIds) {
+async function markNotificationsAsRead(notificationIds, userId) {
     return client_1.prisma.notification.updateMany({
         where: {
             id: { in: notificationIds },
+            userId,
         },
         data: { read: true },
     });

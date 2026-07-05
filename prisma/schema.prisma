@@ -41,38 +41,59 @@ model Task {
 }
 
 model User {
-  id                String           @id @default(cuid())
-  email             String           @unique
-  name              String
-  username          String?          @unique
-  photo             String?
-  avatarInitial     String?
-  avatarColor       String?
-  origin            String           @default("real")
-  createdAt         DateTime         @default(now())
-  lastOpenedAt      DateTime?
-  fcmToken          String?
-  Comment           Comment[]
-  cheers            Cheer[]
-  CommentLike       CommentLike[]
-  followers         Follow[]         @relation("FollowedBy")
-  following         Follow[]         @relation("Following")
-  sentNotifications Notification[]   @relation("SenderNotifications")
-  notifications     Notification[]   @relation("UserNotifications")
-  Push              Push[]
-  referralsRecv     Referral[]       @relation("ReferralsRecv")
-  referralsSent     Referral[]       @relation("ReferralsSent")
-  referralCode      ReferralCode?
-  referralLinks     ReferralLink[]
-  featureFlags      FeatureFlags?
-  ReminderNote      ReminderNote[]
-  progressUpdates   ProgressUpdate[]
-  tasks             Task[]
-  Vote              Vote[]
-  helping           Task[]           @relation("TaskHelpers")
-  feedback          Feedback[]
+  id                         String           @id @default(cuid())
+  email                      String           @unique
+  name                       String
+  username                   String?          @unique
+  photo                      String?
+  avatarInitial              String?
+  avatarColor                String?
+  origin                     String           @default("real")
+  createdAt                  DateTime         @default(now())
+  lastOpenedAt               DateTime?
+  fcmToken                   String?
+  provider                   String?
+  providerUserId             String?
+  appleRefreshToken          String?
+  appleRefreshTokenUpdatedAt DateTime?
+  Comment                    Comment[]
+  cheers                     Cheer[]
+  CommentLike                CommentLike[]
+  followers                  Follow[]         @relation("FollowedBy")
+  following                  Follow[]         @relation("Following")
+  sentNotifications          Notification[]   @relation("SenderNotifications")
+  notifications              Notification[]   @relation("UserNotifications")
+  Push                       Push[]
+  referralsRecv              Referral[]       @relation("ReferralsRecv")
+  referralsSent              Referral[]       @relation("ReferralsSent")
+  referralCode               ReferralCode?
+  referralLinks              ReferralLink[]
+  featureFlags               FeatureFlags?
+  ReminderNote               ReminderNote[]
+  progressUpdates            ProgressUpdate[]
+  tasks                      Task[]
+  Vote                       Vote[]
+  helping                    Task[]           @relation("TaskHelpers")
+  feedback                   Feedback[]
+  authAccounts               AuthAccount[]
 
+  @@unique([provider, providerUserId])
   @@index([origin])
+}
+
+model AuthAccount {
+  id                         String    @id @default(cuid())
+  provider                   String
+  providerUserId             String
+  userId                     String
+  appleRefreshToken          String?
+  appleRefreshTokenUpdatedAt DateTime?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  user                       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
 }
 
 model TaskBeat {

@@ -68,8 +68,12 @@ export async function handleUpdateTask(
   next: NextFunction
 ): Promise<void> {
   const id = getParamString(req.params.id);
+  const userId = req.user?.id;
 
   try {
+    if (!userId) {
+      return next(new BadRequestError("User ID is required"));
+    }
     if (!id) {
       res.status(400).json({ error: "Missing task id" });
       return;
@@ -80,7 +84,7 @@ export async function handleUpdateTask(
        res.status(400).json({ error: "Nothing to update" });
     }
 
-    const updated = await updateTask(id, parsed);
+    const updated = await updateTask(id, parsed, userId);
     res.status(200).json(updated);
   } catch (error) {
     console.error("[TASK_UPDATE_ERROR]", error);
@@ -192,13 +196,17 @@ export async function handleDeleteTask(
   next: NextFunction
 ): Promise<void> {
   const id = getParamString(req.params.id);
+  const userId = req.user?.id;
 
   try {
+    if (!userId) {
+      return next(new BadRequestError("User ID is required"));
+    }
     if (!id) {
       res.status(400).json({ error: "Missing task id" });
       return;
     }
-    await deleteTask(id);
+    await deleteTask(id, userId);
     res.status(204).send();
   } catch (error: any) {
     if (error instanceof Error && error.message === "Task not found.") {

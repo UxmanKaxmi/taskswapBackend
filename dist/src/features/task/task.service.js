@@ -342,13 +342,16 @@ async function createTask(input) {
 /* -------------------------------------------------------
    UPDATE TASK
 --------------------------------------------------------- */
-async function updateTask(id, data) {
+async function updateTask(id, data, userId) {
     const currentTask = await client_1.prisma.task.findUnique({
         where: { id },
         select: { userId: true, type: true },
     });
     if (!currentTask) {
         throw new AppError_1.AppError("Task not found.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    if (currentTask.userId !== userId) {
+        throw new AppError_1.AppError("Unauthorized", httpStatus_1.HttpStatus.UNAUTHORIZED);
     }
     if (data.text) {
         const duplicate = await checkDuplicateTask(data.text, currentTask.userId, id);
@@ -606,10 +609,13 @@ async function getRecentTasksForUserProfile(targetUserId, currentUserId, limit =
 /* -------------------------------------------------------
    DELETE TASK
 --------------------------------------------------------- */
-async function deleteTask(id) {
+async function deleteTask(id, userId) {
     const existing = await client_1.prisma.task.findUnique({ where: { id } });
     if (!existing) {
         throw new AppError_1.AppError("Task not found.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    if (existing.userId !== userId) {
+        throw new AppError_1.AppError("Unauthorized", httpStatus_1.HttpStatus.UNAUTHORIZED);
     }
     await client_1.prisma.vote.deleteMany({ where: { taskId: id } });
     return client_1.prisma.task.delete({ where: { id } });
@@ -707,7 +713,8 @@ async function shareTaskProgress(taskId, senderId, text) {
         const elapsedMs = Date.now() - latestProgressUpdate.createdAt.getTime();
         if (elapsedMs < PROGRESS_UPDATE_COOLDOWN_MS) {
             const remainingMs = PROGRESS_UPDATE_COOLDOWN_MS - elapsedMs;
-            throw new AppError_1.AppError(getProgressUpdateCooldownMessage(remainingMs), httpStatus_1.HttpStatus.TOO_MANY_REQUESTS);
+            const nextAllowedAt = new Date(Date.now() + remainingMs).toISOString();
+            throw new AppError_1.AppError(getProgressUpdateCooldownMessage(remainingMs), httpStatus_1.HttpStatus.TOO_MANY_REQUESTS, true, { nextAllowedAt, remainingMs });
         }
     }
     const senderName = task.name.trim() || "Someone";

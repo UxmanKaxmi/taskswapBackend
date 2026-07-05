@@ -519,7 +519,11 @@ const options =
    UPDATE TASK
 --------------------------------------------------------- */
 
-export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
+export async function updateTask(
+  id: string,
+  data: Partial<CreateTaskInput>,
+  userId: string
+) {
   const currentTask = await prisma.task.findUnique({
     where: { id },
     select: { userId: true, type: true },
@@ -527,6 +531,10 @@ export async function updateTask(id: string, data: Partial<CreateTaskInput>) {
 
   if (!currentTask) {
     throw new AppError("Task not found.", HttpStatus.NOT_FOUND);
+  }
+
+  if (currentTask.userId !== userId) {
+    throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
   }
 
   if (data.text) {
@@ -830,11 +838,15 @@ export async function getRecentTasksForUserProfile(
    DELETE TASK
 --------------------------------------------------------- */
 
-export async function deleteTask(id: string) {
+export async function deleteTask(id: string, userId: string) {
   const existing = await prisma.task.findUnique({ where: { id } });
 
   if (!existing) {
     throw new AppError("Task not found.", HttpStatus.NOT_FOUND);
+  }
+
+  if (existing.userId !== userId) {
+    throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
   }
 
   await prisma.vote.deleteMany({ where: { taskId: id } });
@@ -972,9 +984,12 @@ export async function shareTaskProgress(
     const elapsedMs = Date.now() - latestProgressUpdate.createdAt.getTime();
     if (elapsedMs < PROGRESS_UPDATE_COOLDOWN_MS) {
       const remainingMs = PROGRESS_UPDATE_COOLDOWN_MS - elapsedMs;
+      const nextAllowedAt = new Date(Date.now() + remainingMs).toISOString();
       throw new AppError(
         getProgressUpdateCooldownMessage(remainingMs),
-        HttpStatus.TOO_MANY_REQUESTS
+        HttpStatus.TOO_MANY_REQUESTS,
+        true,
+        { nextAllowedAt, remainingMs }
       );
     }
   }

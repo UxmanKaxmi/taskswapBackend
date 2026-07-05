@@ -7,6 +7,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("./config/env");
 const express_1 = __importDefault(require("express")); // ✅ Add Router here
 const cors_1 = __importDefault(require("cors"));
+const helmet_1 = __importDefault(require("helmet"));
+const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const task_routes_1 = __importDefault(require("./features/task/task.routes"));
 const user_routes_1 = __importDefault(require("./features/user/user.routes"));
 const reminderNote_routes_1 = __importDefault(require("./features/reminderNote/reminderNote.routes"));
@@ -23,33 +25,65 @@ const client_1 = require("./db/client");
 const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
 const PORT = Number(process.env.PORT) || 3001;
-app.use((0, cors_1.default)());
+app.use((0, helmet_1.default)());
+// Restrict CORS to configured origins when ALLOWED_ORIGINS is set
+// (comma-separated). Falls back to permissive in non-production so local
+// dev keeps working; production must set ALLOWED_ORIGINS.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+app.use((0, cors_1.default)(allowedOrigins.length > 0
+    ? { origin: allowedOrigins, credentials: true }
+    : undefined));
 app.use(express_1.default.json());
+// Basic rate limiting across all routes; write-heavy endpoints get a tighter
+// limit registered below.
+app.use((0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+}));
+// Tighter limit for mutations only. Mounted on routers that also serve reads,
+// so skip safe methods — GET/HEAD are covered by the global limiter above and
+// must not be throttled (e.g. feed pagination, opening task detail).
+const writeLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: req => req.method === "GET" || req.method === "HEAD",
+});
 // Health-check endpoint for uptime monitoring
 app.get("/health", (_req, res) => {
     res.status(200).json({ ok: true, timestamp: Date.now() });
 });
-app.get("/test-db", async (req, res) => {
-    try {
-        const users = await client_1.prisma.user.findMany();
-        res.json({ connected: true, users });
-    }
-    catch (error) {
-        res.status(500).json({ connected: false });
-    }
-});
-app.use("/tasks", task_routes_1.default);
+// Debug-only DB connectivity probe. Never exposed outside development —
+// it returns every user row.
+if (process.env.NODE_ENV === "development") {
+    app.get("/test-db", async (req, res) => {
+        try {
+            const users = await client_1.prisma.user.findMany();
+            res.json({ connected: true, users });
+        }
+        catch (error) {
+            res.status(500).json({ connected: false });
+        }
+    });
+}
+app.use("/tasks", writeLimiter, task_routes_1.default);
 app.use("/users", user_routes_1.default);
 app.use("/reminderNote", reminderNote_routes_1.default);
 app.use("/notification", notification_routes_1.default);
-app.use("/vote", vote_routes_1.default);
-app.use("/comments", comment_routes_1.default);
+app.use("/vote", writeLimiter, vote_routes_1.default);
+app.use("/comments", writeLimiter, comment_routes_1.default);
 app.use("/referrals", referral_routes_1.default);
 app.use("/features", featureFlags_routes_1.default);
-app.use("/feedback", feedback_routes_1.default);
-app.use("/beats", cheer_routes_1.default);
+app.use("/feedback", writeLimiter, feedback_routes_1.default);
+app.use("/beats", writeLimiter, cheer_routes_1.default);
 // Push routes, we need Task here
-app.use("/tasks", push_routes_1.default);
+app.use("/tasks", writeLimiter, push_routes_1.default);
 app.use(errorHandler_1.errorHandler);
 // ✅ Server start only after DB connection check
 async function startServer() {
@@ -66,8 +100,8 @@ async function startServer() {
         process.exit(1);
     }
 }
-if (process.env.NODE_ENV !== "test") {
-    // Debug: list all routes
+if (process.env.NODE_ENV === "development") {
+    // Debug: list all routes (development only — leaks the API surface)
     app.get("/routes", (_req, res) => {
         const routes = [];
         app._router.stack.forEach((middleware) => {
@@ -85,6 +119,8 @@ if (process.env.NODE_ENV !== "test") {
         });
         res.json({ routes });
     });
+}
+if (process.env.NODE_ENV !== "test") {
     startServer();
 }
 exports.default = app;

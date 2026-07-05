@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.taskProgressUpdateSchema = exports.taskUpdateSchema = exports.taskSchema = exports.adviceTaskSchema = exports.motivationTaskSchema = exports.decisionTaskSchema = exports.reminderTaskSchema = exports.baseTaskSchema = void 0;
+exports.taskProgressUpdateSchema = exports.taskUpdateSchema = exports.taskSchema = exports.adviceTaskSchema = exports.motivationTaskSchema = exports.decisionTaskSchema = exports.reminderTaskSchema = exports.baseTaskSchema = exports.TASK_TEXT_MAX = void 0;
 const zod_1 = require("zod");
 const task_types_1 = require("./task.types");
 const helpersSchema = zod_1.z.array(zod_1.z.string()).optional();
@@ -13,8 +13,9 @@ const normalizeFeelingTag = (value) => {
     return slug;
 };
 const feelingSchema = zod_1.z.preprocess(normalizeFeelingTag, zod_1.z.enum(task_types_1.FEELING_TAGS).nullable().optional());
+exports.TASK_TEXT_MAX = 120;
 exports.baseTaskSchema = zod_1.z.object({
-    text: zod_1.z.string().min(1),
+    text: zod_1.z.string().min(1).max(exports.TASK_TEXT_MAX, `Text must be ${exports.TASK_TEXT_MAX} characters or fewer`),
     type: zod_1.z.enum(["reminder", "decision", "motivation", "advice"]),
     avatar: zod_1.z.string().optional(),
     feeling: feelingSchema,
@@ -59,7 +60,7 @@ exports.taskSchema = zod_1.z.discriminatedUnion("type", [
     exports.adviceTaskSchema,
 ]);
 const baseUpdateSchema = zod_1.z.object({
-    text: zod_1.z.string().optional(),
+    text: zod_1.z.string().max(exports.TASK_TEXT_MAX, `Text must be ${exports.TASK_TEXT_MAX} characters or fewer`).optional(),
     type: zod_1.z.enum(["reminder", "decision", "motivation", "advice"]).optional(),
     avatar: zod_1.z.string().optional(),
     name: zod_1.z.string().optional(),
@@ -109,5 +110,9 @@ exports.taskUpdateSchema = zod_1.z.union([
     adviceUpdateSchema,
 ]);
 exports.taskProgressUpdateSchema = zod_1.z.object({
-    text: zod_1.z.string().trim().min(1, "Progress update cannot be empty"),
+    text: zod_1.z
+        .string()
+        .trim()
+        .min(1, "Progress update cannot be empty")
+        .max(exports.TASK_TEXT_MAX, `Progress update must be ${exports.TASK_TEXT_MAX} characters or fewer`),
 });

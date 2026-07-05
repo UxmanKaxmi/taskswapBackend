@@ -50,18 +50,25 @@ export async function getUserNotifications(userId: string) {
 
 
 // ✅ Mark a single notification as read
-export async function markNotificationAsRead(notificationId: string) {
-  return prisma.notification.update({
-    where: { id: notificationId },
+export async function markNotificationAsRead(
+  notificationId: string,
+  userId: string
+) {
+  return prisma.notification.updateMany({
+    where: { id: notificationId, userId },
     data: { read: true },
   });
 }
 
 // ✅ Mark multiple notifications as read (batch)
-export async function markNotificationsAsRead(notificationIds: string[]) {
+export async function markNotificationsAsRead(
+  notificationIds: string[],
+  userId: string
+) {
   return prisma.notification.updateMany({
     where: {
       id: { in: notificationIds },
+      userId,
     },
     data: { read: true },
   });

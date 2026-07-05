@@ -2,6 +2,8 @@
 import "./config/env";
 import express, { Router } from "express"; // ✅ Add Router here
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import taskRoutes from "./features/task/task.routes";
 import userRoutes from "./features/user/user.routes";
 import reminderNote from "./features/reminderNote/reminderNote.routes";
@@ -21,34 +23,77 @@ import { errorHandler } from "./middleware/errorHandler";
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
-app.use(cors());
+app.use(helmet());
+
+// Restrict CORS to configured origins when ALLOWED_ORIGINS is set
+// (comma-separated). Falls back to permissive in non-production so local
+// dev keeps working; production must set ALLOWED_ORIGINS.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors(
+    allowedOrigins.length > 0
+      ? { origin: allowedOrigins, credentials: true }
+      : undefined
+  )
+);
 app.use(express.json());
+
+// Basic rate limiting across all routes; write-heavy endpoints get a tighter
+// limit registered below.
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
+
+// Tighter limit for mutations only. Mounted on routers that also serve reads,
+// so skip safe methods — GET/HEAD are covered by the global limiter above and
+// must not be throttled (e.g. feed pagination, opening task detail).
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: req => req.method === "GET" || req.method === "HEAD",
+});
 
 // Health-check endpoint for uptime monitoring
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true, timestamp: Date.now() });
 });
-app.get("/test-db", async (req, res) => {
-  try {
-    const users = await prisma.user.findMany();
-    res.json({ connected: true, users });
-  } catch (error) {
-    res.status(500).json({ connected: false });
-  }
-});
-app.use("/tasks", taskRoutes as Router);
+
+// Debug-only DB connectivity probe. Never exposed outside development —
+// it returns every user row.
+if (process.env.NODE_ENV === "development") {
+  app.get("/test-db", async (req, res) => {
+    try {
+      const users = await prisma.user.findMany();
+      res.json({ connected: true, users });
+    } catch (error) {
+      res.status(500).json({ connected: false });
+    }
+  });
+}
+app.use("/tasks", writeLimiter, taskRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
 app.use("/notification", notificationRoutes as Router);
-app.use("/vote", voteRoutes as Router);
-app.use("/comments", commentRoutes as Router);
+app.use("/vote", writeLimiter, voteRoutes as Router);
+app.use("/comments", writeLimiter, commentRoutes as Router);
 app.use("/referrals", referralRoutes as Router);
 app.use("/features", featureFlagsRoutes as Router);
-app.use("/feedback", feedbackRoutes as Router);
-app.use("/beats", cheerRoutes as Router);
+app.use("/feedback", writeLimiter, feedbackRoutes as Router);
+app.use("/beats", writeLimiter, cheerRoutes as Router);
 
 // Push routes, we need Task here
-app.use("/tasks", pushRoutes as Router);
+app.use("/tasks", writeLimiter, pushRoutes as Router);
 
 app.use(errorHandler);
 
@@ -68,8 +113,8 @@ async function startServer() {
   }
 }
 
-if (process.env.NODE_ENV !== "test") {
-  // Debug: list all routes
+if (process.env.NODE_ENV === "development") {
+  // Debug: list all routes (development only — leaks the API surface)
   app.get("/routes", (_req, res) => {
     const routes: string[] = [];
 
@@ -89,6 +134,9 @@ if (process.env.NODE_ENV !== "test") {
 
     res.json({ routes });
   });
+}
+
+if (process.env.NODE_ENV !== "test") {
   startServer();
 }
 

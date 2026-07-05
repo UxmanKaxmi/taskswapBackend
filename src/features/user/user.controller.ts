@@ -7,6 +7,7 @@ import {
   searchFriendsService,
   syncUserToDB,
   toggleFollowUser,
+  deleteMyAccount,
 } from "./user.service";
 import jwt from "jsonwebtoken";
 import { User } from "@prisma/client";
@@ -27,29 +28,41 @@ export async function handleSyncUser(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const { id, email, name, photo, fcmToken } = req.body;
+  const {
+    id,
+    email,
+    name,
+    photo,
+    fcmToken,
+    provider,
+    providerUserId,
+    authorizationCode,
+  } = req.body;
 
-  console.log("[HANDLE_SYNC_USER] Request body:", req.body);
-
-  if (!id || !email || !name) {
-    console.log("[HANDLE_SYNC_USER] Missing required user fields");
+  if (!id || !provider || !providerUserId) {
     return next(new BadRequestError("Missing required user fields"));
   }
 
   try {
-    const user: User = await syncUserToDB({ id, email, name, photo, fcmToken });
-
-    console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
+    const user: User = await syncUserToDB({
+      id,
+      email,
+      name,
+      photo,
+      fcmToken,
+      provider,
+      providerUserId,
+      authorizationCode,
+    });
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
       expiresIn: "7d",
     });
 
-    console.log("[HANDLE_SYNC_USER] JWT token generated");
-
     res.status(200).json({ user, token });
   } catch (error) {
     console.error("[USER_API_ERROR]", error);
+    if (error instanceof AppError) return next(error);
     next(new AppError("Failed to sync user", 500));
   }
 }
@@ -215,6 +228,22 @@ export async function handleGetMe(
     });
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
+  }
+}
+
+export async function handleDeleteMe(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return next(new AppError("Unauthorized", 401));
+
+    await deleteMyAccount(userId);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
   }
 }
 

@@ -4,6 +4,11 @@ import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
 import { getRecentTasksForUserProfile } from "../task/task.service";
 import { getFollowNotificationMessage } from "../../utils/notificationTextCatalog";
+import { USER_ORIGIN } from "../seededUser/seededUser.service";
+import {
+  exchangeAppleAuthorizationCode,
+  revokeAppleRefreshToken,
+} from "./appleAuth.service";
 
 export async function syncUserToDB({
   id,
@@ -11,17 +16,279 @@ export async function syncUserToDB({
   name,
   photo,
   fcmToken,
+  provider,
+  providerUserId,
+  authorizationCode,
 }: {
   id: string;
-  email: string;
-  name: string;
+  email?: string;
+  name?: string;
   photo?: string;
   fcmToken?: string;
+  provider?: string;
+  providerUserId?: string;
+  authorizationCode?: string;
 }) {
-  return prisma.user.upsert({
-    where: { id },
-    update: { name, email, photo, fcmToken },
-    create: { id, name, email, photo, fcmToken },
+  const appleRefreshToken =
+    provider === "apple"
+      ? await getAppleRefreshTokenFromAuthorizationCode(authorizationCode)
+      : undefined;
+  const normalizedEmail = normalizeEmail(email);
+
+  const existing = await findExistingUserForVerifiedIdentity({
+    id,
+    email: normalizedEmail,
+    provider,
+    providerUserId,
+  });
+
+  const updateData = removeUndefined({
+    email: normalizedEmail,
+    name: getNonEmptyString(name),
+    photo,
+    fcmToken,
+    provider,
+    providerUserId,
+    appleRefreshToken,
+    appleRefreshTokenUpdatedAt: appleRefreshToken ? new Date() : undefined,
+  });
+
+  if (existing) {
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+
+      if (provider && providerUserId) {
+        await tx.authAccount.upsert({
+          where: { provider_providerUserId: { provider, providerUserId } },
+          update: removeUndefined({
+            userId: user.id,
+            appleRefreshToken,
+            appleRefreshTokenUpdatedAt: appleRefreshToken ? new Date() : undefined,
+          }),
+          create: {
+            provider,
+            providerUserId,
+            userId: user.id,
+            appleRefreshToken,
+            appleRefreshTokenUpdatedAt: appleRefreshToken ? new Date() : undefined,
+          },
+        });
+      }
+
+      return user;
+    });
+  }
+
+  const createEmail = normalizedEmail;
+  const createName = getNonEmptyString(name);
+
+  if (!createEmail || !createName) {
+    throw new AppError(
+      "Verified email and name are required for new users",
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        id,
+        email: createEmail,
+        name: createName,
+        photo,
+        fcmToken,
+        provider,
+        providerUserId,
+        appleRefreshToken,
+        appleRefreshTokenUpdatedAt: appleRefreshToken ? new Date() : undefined,
+      },
+    });
+
+    if (provider && providerUserId) {
+      await tx.authAccount.create({
+        data: {
+          provider,
+          providerUserId,
+          userId: user.id,
+          appleRefreshToken,
+          appleRefreshTokenUpdatedAt: appleRefreshToken ? new Date() : undefined,
+        },
+      });
+    }
+
+    return user;
+  });
+}
+
+async function findExistingUserForVerifiedIdentity({
+  id,
+  email,
+  provider,
+  providerUserId,
+}: {
+  id: string;
+  email?: string;
+  provider?: string;
+  providerUserId?: string;
+}) {
+  if (provider && providerUserId) {
+    const authAccount = await prisma.authAccount.findUnique({
+      where: { provider_providerUserId: { provider, providerUserId } },
+      include: { user: true },
+    });
+
+    if (authAccount) return authAccount.user;
+
+    const legacyProviderUser = await prisma.user.findFirst({
+      where: { provider, providerUserId },
+    });
+
+    if (legacyProviderUser) return legacyProviderUser;
+  }
+
+  const sameIdUser = await prisma.user.findUnique({ where: { id } });
+  if (sameIdUser) return sameIdUser;
+
+  if (email) {
+    return prisma.user.findUnique({ where: { email } });
+  }
+
+  return null;
+}
+
+async function getAppleRefreshTokenFromAuthorizationCode(
+  authorizationCode?: string
+): Promise<string | undefined> {
+  try {
+    return await exchangeAppleAuthorizationCode(authorizationCode);
+  } catch (error) {
+    console.error("[APPLE_AUTH] Failed to exchange authorization code", error);
+    return undefined;
+  }
+}
+
+function getNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function normalizeEmail(value: unknown): string | undefined {
+  return getNonEmptyString(value)?.toLowerCase();
+}
+
+function removeUndefined<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined)
+  ) as Partial<T>;
+}
+
+/**
+ * Permanently delete a user and all of their owned content.
+ *
+ * The Task.user relation has no onDelete rule (defaults to Restrict), so a
+ * user's own tasks must be removed before the user row. Deleting the tasks
+ * cascades to task-scoped rows (beats, cheers, votes, comments, pushes,
+ * progress updates, reminder notes); deleting the user cascades the rest
+ * (follows, notifications, that user's cheers/pushes/votes/comments on other
+ * tasks, referral codes/links). Feedback and received referrals are set null
+ * per the schema so other users' non-account records stay intact.
+ */
+export async function deleteMyAccount(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      origin: true,
+      appleRefreshToken: true,
+      authAccounts: {
+        where: { provider: "apple" },
+        select: { appleRefreshToken: true },
+      },
+    },
+  });
+
+  if (!user) {
+    return;
+  }
+
+  if (user.origin === USER_ORIGIN.SEEDED) {
+    throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
+  }
+
+  try {
+    const appleTokens = [
+      user.appleRefreshToken,
+      ...user.authAccounts.map((account) => account.appleRefreshToken),
+    ];
+
+    await Promise.all(
+      appleTokens.map((refreshToken) => revokeAppleRefreshToken(refreshToken))
+    );
+  } catch (error) {
+    console.error("[APPLE_AUTH] Failed to revoke Apple refresh token", error);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.updateMany({
+      where: { id: userId },
+      data: { fcmToken: null },
+    });
+
+    await tx.notification.deleteMany({
+      where: { OR: [{ userId }, { senderId: userId }] },
+    });
+
+    await tx.feedback.updateMany({
+      where: { userId },
+      data: { userId: null },
+    });
+
+    await tx.referral.deleteMany({ where: { inviterId: userId } });
+    await tx.referral.updateMany({
+      where: { inviteeId: userId },
+      data: { inviteeId: null },
+    });
+    await tx.referralLink.deleteMany({ where: { userId } });
+    await tx.referralCode.deleteMany({ where: { userId } });
+    await tx.featureFlags.deleteMany({ where: { userId } });
+    await tx.follow.deleteMany({
+      where: { OR: [{ followerId: userId }, { followingId: userId }] },
+    });
+
+    await tx.commentLike.deleteMany({
+      where: {
+        OR: [
+          { userId },
+          { comment: { userId } },
+          { comment: { task: { userId } } },
+        ],
+      },
+    });
+    await tx.cheer.deleteMany({
+      where: { OR: [{ userId }, { task: { userId } }] },
+    });
+    await tx.push.deleteMany({
+      where: { OR: [{ userId }, { task: { userId } }] },
+    });
+    await tx.vote.deleteMany({
+      where: { OR: [{ userId }, { task: { userId } }] },
+    });
+    await tx.reminderNote.deleteMany({
+      where: { OR: [{ senderId: userId }, { task: { userId } }] },
+    });
+    await tx.progressUpdate.deleteMany({
+      where: { OR: [{ senderId: userId }, { task: { userId } }] },
+    });
+    await tx.comment.deleteMany({
+      where: { OR: [{ userId }, { task: { userId } }] },
+    });
+
+    await tx.task.deleteMany({ where: { userId } });
+    await tx.user.deleteMany({ where: { id: userId } });
   });
 }
 

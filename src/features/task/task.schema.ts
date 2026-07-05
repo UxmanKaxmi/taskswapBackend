@@ -16,8 +16,10 @@ const feelingSchema = z.preprocess(
   z.enum(FEELING_TAGS).nullable().optional()
 );
 
+export const TASK_TEXT_MAX = 120;
+
 export const baseTaskSchema = z.object({
-  text: z.string().min(1),
+  text: z.string().min(1).max(TASK_TEXT_MAX, `Text must be ${TASK_TEXT_MAX} characters or fewer`),
   type: z.enum(["reminder", "decision", "motivation", "advice"]),
   avatar: z.string().optional(),
   feeling: feelingSchema,
@@ -72,7 +74,7 @@ export const taskSchema = z.discriminatedUnion("type", [
 ]);
 
 const baseUpdateSchema = z.object({
-  text: z.string().optional(),
+  text: z.string().max(TASK_TEXT_MAX, `Text must be ${TASK_TEXT_MAX} characters or fewer`).optional(),
   type: z.enum(["reminder", "decision", "motivation", "advice"]).optional(),
   avatar: z.string().optional(),
   name: z.string().optional(),
@@ -132,7 +134,11 @@ export const taskUpdateSchema = z.union([
 ]);
 
 export const taskProgressUpdateSchema = z.object({
-  text: z.string().trim().min(1, "Progress update cannot be empty"),
+  text: z
+    .string()
+    .trim()
+    .min(1, "Progress update cannot be empty")
+    .max(TASK_TEXT_MAX, `Progress update must be ${TASK_TEXT_MAX} characters or fewer`),
 });
 
 export type CreateTaskSchemaInput = z.infer<typeof taskSchema>;

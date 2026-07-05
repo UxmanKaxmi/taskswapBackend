@@ -32,7 +32,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   console.error("❌ [Global Error]", err);
 
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ error: err.message });
+    res
+      .status(err.statusCode)
+      .json({ error: err.message, ...(err.details ? { details: err.details } : {}) });
     return;
   }
 
@@ -45,7 +47,13 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         res.status(404).json({ error: "Record not found" });
         return;
       default:
-        res.status(500).json({ error: `Database error [${err.code}]` });
+        // Don't leak the internal Prisma error code to clients in production.
+        res.status(500).json({
+          error:
+            process.env.NODE_ENV === "production"
+              ? "Something went wrong"
+              : `Database error [${err.code}]`,
+        });
         return;
     }
   }

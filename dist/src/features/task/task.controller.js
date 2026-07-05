@@ -48,7 +48,11 @@ async function handleCreateTask(req, res, next) {
 ---------------------------------------------------------*/
 async function handleUpdateTask(req, res, next) {
     const id = (0, params_1.getParamString)(req.params.id);
+    const userId = req.user?.id;
     try {
+        if (!userId) {
+            return next(new errors_1.BadRequestError("User ID is required"));
+        }
         if (!id) {
             res.status(400).json({ error: "Missing task id" });
             return;
@@ -57,7 +61,7 @@ async function handleUpdateTask(req, res, next) {
         if (Object.keys(parsed).length === 0) {
             res.status(400).json({ error: "Nothing to update" });
         }
-        const updated = await (0, task_service_1.updateTask)(id, parsed);
+        const updated = await (0, task_service_1.updateTask)(id, parsed, userId);
         res.status(200).json(updated);
     }
     catch (error) {
@@ -142,12 +146,16 @@ async function handleGetTaskById(req, res, next) {
 ---------------------------------------------------------*/
 async function handleDeleteTask(req, res, next) {
     const id = (0, params_1.getParamString)(req.params.id);
+    const userId = req.user?.id;
     try {
+        if (!userId) {
+            return next(new errors_1.BadRequestError("User ID is required"));
+        }
         if (!id) {
             res.status(400).json({ error: "Missing task id" });
             return;
         }
-        await (0, task_service_1.deleteTask)(id);
+        await (0, task_service_1.deleteTask)(id, userId);
         res.status(204).send();
     }
     catch (error) {

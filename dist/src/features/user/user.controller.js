@@ -9,6 +9,7 @@ exports.handleToggleFollowUser = handleToggleFollowUser;
 exports.handleGetFollowers = handleGetFollowers;
 exports.handleGetFollowing = handleGetFollowing;
 exports.handleGetMe = handleGetMe;
+exports.handleDeleteMe = handleDeleteMe;
 exports.handleGetHomeSummary = handleGetHomeSummary;
 exports.searchFriends = searchFriends;
 exports.handleGetUserProfile = handleGetUserProfile;
@@ -20,23 +21,30 @@ const user_service_2 = require("./user.service");
 const params_1 = require("../../utils/params");
 const user_service_3 = require("./user.service");
 async function handleSyncUser(req, res, next) {
-    const { id, email, name, photo, fcmToken } = req.body;
-    console.log("[HANDLE_SYNC_USER] Request body:", req.body);
-    if (!id || !email || !name) {
-        console.log("[HANDLE_SYNC_USER] Missing required user fields");
+    const { id, email, name, photo, fcmToken, provider, providerUserId, authorizationCode, } = req.body;
+    if (!id || !provider || !providerUserId) {
         return next(new errors_1.BadRequestError("Missing required user fields"));
     }
     try {
-        const user = await (0, user_service_1.syncUserToDB)({ id, email, name, photo, fcmToken });
-        console.log("[HANDLE_SYNC_USER] User synced to DB:", user);
+        const user = await (0, user_service_1.syncUserToDB)({
+            id,
+            email,
+            name,
+            photo,
+            fcmToken,
+            provider,
+            providerUserId,
+            authorizationCode,
+        });
         const token = jsonwebtoken_1.default.sign({ userId: user.id }, process.env.JWT_SECRET, {
             expiresIn: "7d",
         });
-        console.log("[HANDLE_SYNC_USER] JWT token generated");
         res.status(200).json({ user, token });
     }
     catch (error) {
         console.error("[USER_API_ERROR]", error);
+        if (error instanceof AppError_1.AppError)
+            return next(error);
         next(new AppError_1.AppError("Failed to sync user", 500));
     }
 }
@@ -165,6 +173,18 @@ async function handleGetMe(req, res, next) {
     }
     catch (err) {
         next(new AppError_1.AppError("Failed to fetch user profile", 500));
+    }
+}
+async function handleDeleteMe(req, res, next) {
+    try {
+        const userId = req.user?.id;
+        if (!userId)
+            return next(new AppError_1.AppError("Unauthorized", 401));
+        await (0, user_service_1.deleteMyAccount)(userId);
+        res.status(204).send();
+    }
+    catch (err) {
+        next(err);
     }
 }
 async function handleGetHomeSummary(req, res, next) {

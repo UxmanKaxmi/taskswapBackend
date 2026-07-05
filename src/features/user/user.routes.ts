@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { verifyGoogleToken } from "../../middleware/verifyGoogleToken";
+import {
+  verifyAuthProviderToken,
+  verifyGoogleToken,
+} from "../../middleware/verifyGoogleToken";
 import {
   handleGetFollowers,
   handleGetFollowing,
@@ -9,16 +12,18 @@ import {
   handleMatchUsers,
   handleSyncUser,
   handleToggleFollowUser,
+  handleDeleteMe,
   searchFriends,
 } from "./user.controller";
 import { requireAuth } from "../../middleware/requireAuth";
+import { requireJwtAuth } from "../../middleware/requireJwtAuth";
 import { optionalAuth } from "../../middleware/optionalAuth";
 
 const router = Router();
 
 // Sync/login user
-router.post("/", verifyGoogleToken, handleSyncUser);
-router.post("/google-sync", verifyGoogleToken, handleSyncUser);
+router.post("/", verifyAuthProviderToken, handleSyncUser);
+router.post("/google-sync", verifyAuthProviderToken, handleSyncUser);
 
 // Match contacts (auth required)
 router.post("/match", requireAuth, handleMatchUsers);
@@ -31,6 +36,9 @@ router.get("/followers", optionalAuth, handleGetFollowers);
 router.get("/following", optionalAuth, handleGetFollowing);
 
 router.get("/me", requireAuth, handleGetMe);
+
+// Account deletion (Apple 5.1.1(v)) — identity comes from the token, not params
+router.delete("/me", requireJwtAuth, handleDeleteMe);
 
 // Home dashboard summary for the logged-in user
 router.get("/me/home-summary", requireAuth, handleGetHomeSummary);
