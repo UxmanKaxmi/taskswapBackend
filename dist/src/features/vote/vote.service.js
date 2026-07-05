@@ -3,6 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.castVoteForTask = castVoteForTask;
 exports.getVotesForTask = getVotesForTask;
 const client_1 = require("../../db/client");
+const AppError_1 = require("../../errors/AppError");
+const httpStatus_1 = require("../../types/httpStatus");
+const moderation_service_1 = require("../moderation/moderation.service");
 // 🗳️ Cast or update a vote for a task
 async function castVoteForTask({ userId, taskId, nextOption, prevOption, // (not needed for DB since we upsert per user, but kept for validation/logging)
 option, }) {
@@ -13,10 +16,13 @@ option, }) {
     // Ensure task exists and is a decision with valid options
     const task = await client_1.prisma.task.findUnique({
         where: { id: taskId },
-        select: { options: true, type: true },
+        select: { options: true, type: true, userId: true },
     });
     if (!task || task.type !== "decision") {
         throw new Error("Task not found or is not a decision type");
+    }
+    if (await (0, moderation_service_1.isTaskHiddenForViewer)(task.userId, userId)) {
+        throw new AppError_1.AppError("This task is unavailable.", httpStatus_1.HttpStatus.FORBIDDEN);
     }
     if (!task.options?.includes(chosen)) {
         throw new Error("Invalid voting option");

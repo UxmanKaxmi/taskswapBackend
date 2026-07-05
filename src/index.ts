@@ -16,6 +16,11 @@ import featureFlagsRoutes from "./features/featureFlags/featureFlags.routes";
 import { startNotificationReminderSweep } from "./features/notification/notificationReminderSweep.service";
 import feedbackRoutes from "./features/feedback/feedback.routes";
 import cheerRoutes from "./features/cheer/cheer.routes";
+import {
+  adminModerationRoutes,
+  taskModerationRoutes,
+  userModerationRoutes,
+} from "./features/moderation/moderation.routes";
 
 import { prisma } from "./db/client";
 import { errorHandler } from "./middleware/errorHandler";
@@ -81,7 +86,9 @@ if (process.env.NODE_ENV === "development") {
     }
   });
 }
+app.use("/tasks", writeLimiter, taskModerationRoutes as Router);
 app.use("/tasks", writeLimiter, taskRoutes as Router);
+app.use("/users", writeLimiter, userModerationRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
 app.use("/notification", notificationRoutes as Router);
@@ -91,6 +98,7 @@ app.use("/referrals", referralRoutes as Router);
 app.use("/features", featureFlagsRoutes as Router);
 app.use("/feedback", writeLimiter, feedbackRoutes as Router);
 app.use("/beats", writeLimiter, cheerRoutes as Router);
+app.use("/admin", writeLimiter, adminModerationRoutes as Router);
 
 // Push routes, we need Task here
 app.use("/tasks", writeLimiter, pushRoutes as Router);

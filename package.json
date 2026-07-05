@@ -30,6 +30,7 @@
     "test-reset": "DATABASE_URL=\"postgresql://usmankazmi@localhost:5432/taskswap_test\" prisma migrate reset --force && prisma generate && jest",
     "db-migrate": "npx prisma migrate deploy && npx prisma generate",
     "seed": "tsx prisma/seed.ts",
+    "seed:appstore": "tsx scripts/seedAppStoreScreenshots.ts",
     "seed:users": "ts-node scripts/seedSeededUsers.ts",
     "create-feature": "ts-node scripts/createFeature.ts",
     "db-reset": "prisma migrate reset --force",

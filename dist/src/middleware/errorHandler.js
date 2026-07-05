@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.errorHandler = void 0;
 const client_1 = require("@prisma/client");
+const zod_1 = require("zod");
 const AppError_1 = require("../errors/AppError");
 /**
  * 🔖 Common HTTP Status Codes for AppError
@@ -33,6 +34,13 @@ const errorHandler = (err, req, res, _next) => {
         res
             .status(err.statusCode)
             .json({ error: err.message, ...(err.details ? { details: err.details } : {}) });
+        return;
+    }
+    if (err instanceof zod_1.ZodError) {
+        res.status(400).json({
+            error: "Validation error",
+            issues: err.errors,
+        });
         return;
     }
     if (err instanceof client_1.Prisma.PrismaClientKnownRequestError) {

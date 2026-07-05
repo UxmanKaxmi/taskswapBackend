@@ -21,6 +21,7 @@ const featureFlags_routes_1 = __importDefault(require("./features/featureFlags/f
 const notificationReminderSweep_service_1 = require("./features/notification/notificationReminderSweep.service");
 const feedback_routes_1 = __importDefault(require("./features/feedback/feedback.routes"));
 const cheer_routes_1 = __importDefault(require("./features/cheer/cheer.routes"));
+const moderation_routes_1 = require("./features/moderation/moderation.routes");
 const client_1 = require("./db/client");
 const errorHandler_1 = require("./middleware/errorHandler");
 const app = (0, express_1.default)();
@@ -72,7 +73,9 @@ if (process.env.NODE_ENV === "development") {
         }
     });
 }
+app.use("/tasks", writeLimiter, moderation_routes_1.taskModerationRoutes);
 app.use("/tasks", writeLimiter, task_routes_1.default);
+app.use("/users", writeLimiter, moderation_routes_1.userModerationRoutes);
 app.use("/users", user_routes_1.default);
 app.use("/reminderNote", reminderNote_routes_1.default);
 app.use("/notification", notification_routes_1.default);
@@ -82,6 +85,7 @@ app.use("/referrals", referral_routes_1.default);
 app.use("/features", featureFlags_routes_1.default);
 app.use("/feedback", writeLimiter, feedback_routes_1.default);
 app.use("/beats", writeLimiter, cheer_routes_1.default);
+app.use("/admin", writeLimiter, moderation_routes_1.adminModerationRoutes);
 // Push routes, we need Task here
 app.use("/tasks", writeLimiter, push_routes_1.default);
 app.use(errorHandler_1.errorHandler);

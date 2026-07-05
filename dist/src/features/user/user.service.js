@@ -21,6 +21,7 @@ const task_service_1 = require("../task/task.service");
 const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 const seededUser_service_1 = require("../seededUser/seededUser.service");
 const appleAuth_service_1 = require("./appleAuth.service");
+const moderation_service_1 = require("../moderation/moderation.service");
 async function syncUserToDB({ id, email, name, photo, fcmToken, provider, providerUserId, authorizationCode, }) {
     const appleRefreshToken = provider === "apple"
         ? await getAppleRefreshTokenFromAuthorizationCode(authorizationCode)
@@ -203,6 +204,12 @@ async function deleteMyAccount(userId) {
         await tx.referralLink.deleteMany({ where: { userId } });
         await tx.referralCode.deleteMany({ where: { userId } });
         await tx.featureFlags.deleteMany({ where: { userId } });
+        await tx.userBlock.deleteMany({
+            where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+        });
+        await tx.taskReport.deleteMany({
+            where: { OR: [{ reporterId: userId }, { reportedUserId: userId }] },
+        });
         await tx.follow.deleteMany({
             where: { OR: [{ followerId: userId }, { followingId: userId }] },
         });
@@ -472,12 +479,16 @@ async function searchFriendsService(userId, query, includeFollowed) {
         where: { followerId: userId },
         select: { followingId: true },
     });
-    const followingIds = following.map((f) => f.followingId);
+    const blockedUserIds = await (0, moderation_service_1.getBlockedUserIdsForViewer)(userId);
+    const blockedUserIdSet = new Set(blockedUserIds);
+    const followingIds = following
+        .map((f) => f.followingId)
+        .filter((followingId) => !blockedUserIdSet.has(followingId));
     const followingIdSet = new Set(followingIds);
     // Fetch all matching users except the requester
     const users = await client_1.prisma.user.findMany({
         where: {
-            id: { not: userId },
+            id: { not: userId, notIn: blockedUserIds },
             OR: [
                 { name: { contains: query, mode: "insensitive" } },
                 { email: { contains: query, mode: "insensitive" } },
@@ -521,7 +532,11 @@ async function getHomeSummaryForUser(userId, utcOffsetMinutes = 0) {
             },
         }),
     ]);
-    const followingIds = following.map((f) => f.followingId);
+    const blockedUserIds = await (0, moderation_service_1.getBlockedUserIdsForViewer)(userId);
+    const blockedUserIdSet = new Set(blockedUserIds);
+    const followingIds = following
+        .map((f) => f.followingId)
+        .filter((followingId) => !blockedUserIdSet.has(followingId));
     const yourGoal = ownGoal
         ? {
             taskId: ownGoal.id,

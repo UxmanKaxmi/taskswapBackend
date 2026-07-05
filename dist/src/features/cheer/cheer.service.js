@@ -10,6 +10,7 @@ const notificationTypes_1 = require("../../types/notificationTypes");
 const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
 const cheer_presets_1 = require("./cheer.presets");
+const moderation_service_1 = require("../moderation/moderation.service");
 const CHEER_SAMPLE_SIZE = 3;
 const CHEER_NOTIFICATION_GROUP_MS = 30 * 60 * 1000;
 function isKnownPrismaError(error, code) {
@@ -273,6 +274,9 @@ async function cheerBeat({ beatId, userId, presetKey, }) {
                 }
                 if (task.userId === userId) {
                     throw new AppError_1.AppError("You cannot cheer your own task.", httpStatus_1.HttpStatus.FORBIDDEN);
+                }
+                if (await (0, moderation_service_1.isTaskHiddenForViewer)(task.userId, userId)) {
+                    throw new AppError_1.AppError("This task is unavailable.", httpStatus_1.HttpStatus.FORBIDDEN);
                 }
                 const push = await tx.push.findFirst({
                     where: {

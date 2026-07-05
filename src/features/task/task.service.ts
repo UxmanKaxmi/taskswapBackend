@@ -26,6 +26,11 @@ import {
 } from "../notification/notification.service";
 import { scheduleSeededPushesForTask } from "../seededPush/seededPush.service";
 import { getTaskCheerSummaryForTask } from "../cheer/cheer.service";
+import { assertPostableContent } from "../../utils/contentModeration";
+import {
+  getBlockedUserIdsForViewer,
+  isTaskHiddenForViewer,
+} from "../moderation/moderation.service";
 
 type FeedTask = {
   id: string;
@@ -317,13 +322,18 @@ function getFeedOrderBy(sort: FeedSort) {
 
 async function getFeedCursorRow(
   cursorId: string | undefined,
-  excludeUserId?: string | null
+  excludeUserId?: string | null,
+  blockedUserIds: string[] = []
 ): Promise<FeedCursorRow | null> {
   if (!cursorId) return null;
 
   const excludeSelfCondition = excludeUserId
     ? Prisma.sql`AND t."userId" <> ${excludeUserId}`
     : Prisma.empty;
+  const blockedUsersCondition =
+    blockedUserIds.length > 0
+      ? Prisma.sql`AND t."userId" NOT IN (${Prisma.join(blockedUserIds)})`
+      : Prisma.empty;
 
   const rows = await prisma.$queryRaw<FeedCursorRow[]>`
     SELECT
@@ -339,6 +349,7 @@ async function getFeedCursorRow(
       AND t.completed = false
       AND t."completedAt" IS NULL
       ${excludeSelfCondition}
+      ${blockedUsersCondition}
     LIMIT 1
   `;
 
@@ -350,18 +361,24 @@ async function getOrderedFeedTaskIds({
   limit,
   cursorId,
   excludeUserId,
+  blockedUserIds,
 }: {
   sort: FeedSort;
   limit: number;
   cursorId?: string;
   excludeUserId?: string | null;
+  blockedUserIds?: string[];
 }) {
   const excludeSelfCondition = excludeUserId
     ? Prisma.sql`AND t."userId" <> ${excludeUserId}`
     : Prisma.empty;
   const almostThereCondition =
     sort === "almost_there" ? Prisma.sql`AND t."isAlmostThere" = true` : Prisma.empty;
-  const cursor = await getFeedCursorRow(cursorId, excludeUserId);
+  const blockedUsersCondition =
+    blockedUserIds && blockedUserIds.length > 0
+      ? Prisma.sql`AND t."userId" NOT IN (${Prisma.join(blockedUserIds)})`
+      : Prisma.empty;
+  const cursor = await getFeedCursorRow(cursorId, excludeUserId, blockedUserIds);
   const cursorCondition = getFeedCursorCondition(sort, cursor);
   const orderBy = getFeedOrderBy(sort);
 
@@ -375,6 +392,7 @@ async function getOrderedFeedTaskIds({
       AND t."completedAt" IS NULL
       ${almostThereCondition}
       ${excludeSelfCondition}
+      ${blockedUsersCondition}
       ${cursorCondition}
     ORDER BY ${orderBy}
     LIMIT ${limit}
@@ -387,6 +405,11 @@ async function getOrderedFeedTaskIds({
 
 export async function createTask(input: CreateTaskInput) {
   const { text, userId, type } = input;
+
+  assertPostableContent([
+    text,
+    ...(type === "decision" ? input.options ?? [] : []),
+  ]);
 
   const existing = await checkDuplicateTask(text, userId);
   if (existing) {
@@ -537,6 +560,13 @@ export async function updateTask(
     throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
   }
 
+  if (data.text || "options" in data) {
+    assertPostableContent([
+      data.text,
+      ...("options" in data ? data.options ?? [] : []),
+    ]);
+  }
+
   if (data.text) {
     const duplicate = await checkDuplicateTask(data.text, currentTask.userId, id);
     if (duplicate) {
@@ -619,6 +649,10 @@ export async function getTaskById(taskId: string, userId?: string | null) {
 
   if (!task || !task.isPublic) {
     throw new AppError("Task not found", HttpStatus.NOT_FOUND);
+  }
+
+  if (await isTaskHiddenForViewer(task.userId, userId)) {
+    throw new AppError("This task is hidden.", HttpStatus.NOT_FOUND);
   }
 
   // ---------------------------------
@@ -756,11 +790,13 @@ export async function getAllTasks(
   const sort = normalizeFeedSort(helpers?.sort);
   const cursorId = helpers?.cursor?.trim();
   const excludeUserId = helpers?.excludeSelf && userId ? userId : null;
+  const blockedUserIds = await getBlockedUserIdsForViewer(userId ?? null);
   const orderedIds = await getOrderedFeedTaskIds({
     sort,
     limit: fetchLimit,
     cursorId,
     excludeUserId,
+    blockedUserIds,
   });
 
   const hasMore = orderedIds.length === fetchLimit;
@@ -816,6 +852,10 @@ export async function getRecentTasksForUserProfile(
   currentUserId?: string | null,
   limit = 5
 ) {
+  if (await isTaskHiddenForViewer(targetUserId, currentUserId)) {
+    return [];
+  }
+
   const recentTasks = await prisma.task.findMany({
     where: { userId: targetUserId },
     include: {
@@ -929,6 +969,8 @@ export async function shareTaskProgress(
   senderId: string,
   text: string
 ): Promise<TaskProgressUpdateSummary> {
+  assertPostableContent([text]);
+
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: {

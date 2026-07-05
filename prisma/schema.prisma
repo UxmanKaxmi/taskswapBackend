@@ -31,6 +31,7 @@ model Task {
   beats            TaskBeat[]
   Push             Push[]
   ReminderNote     ReminderNote[]
+  reports          TaskReport[]
   progressUpdates  ProgressUpdate[]
   user             User             @relation(fields: [userId], references: [id])
   Vote             Vote[]
@@ -70,6 +71,10 @@ model User {
   referralLinks              ReferralLink[]
   featureFlags               FeatureFlags?
   ReminderNote               ReminderNote[]
+  reportsMade                TaskReport[]    @relation("ReporterReports")
+  reportsReceived            TaskReport[]    @relation("ReportedUserReports")
+  blockedUsers               UserBlock[]      @relation("UserBlocks")
+  blockedBy                  UserBlock[]      @relation("UserBlockedBy")
   progressUpdates            ProgressUpdate[]
   tasks                      Task[]
   Vote                       Vote[]
@@ -79,6 +84,46 @@ model User {
 
   @@unique([provider, providerUserId])
   @@index([origin])
+}
+
+model TaskReport {
+  id             String       @id @default(uuid())
+  reporterId     String
+  taskId         String
+  reportedUserId String
+  reason         String
+  details        String?
+  status         ReportStatus @default(pending)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  reviewedAt     DateTime?
+  reporter       User         @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  task           Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reportedUser   User         @relation("ReportedUserReports", fields: [reportedUserId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([reporterId, createdAt])
+  @@index([taskId, createdAt])
+  @@index([reportedUserId, createdAt])
+}
+
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   User     @relation("UserBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("UserBlockedBy", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+enum ReportStatus {
+  pending
+  reviewed
+  dismissed
+  action_taken
 }
 
 model AuthAccount {

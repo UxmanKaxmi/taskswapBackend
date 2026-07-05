@@ -9,6 +9,7 @@ import {
   exchangeAppleAuthorizationCode,
   revokeAppleRefreshToken,
 } from "./appleAuth.service";
+import { getBlockedUserIdsForViewer } from "../moderation/moderation.service";
 
 export async function syncUserToDB({
   id,
@@ -255,6 +256,12 @@ export async function deleteMyAccount(userId: string) {
     await tx.referralLink.deleteMany({ where: { userId } });
     await tx.referralCode.deleteMany({ where: { userId } });
     await tx.featureFlags.deleteMany({ where: { userId } });
+    await tx.userBlock.deleteMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+    });
+    await tx.taskReport.deleteMany({
+      where: { OR: [{ reporterId: userId }, { reportedUserId: userId }] },
+    });
     await tx.follow.deleteMany({
       where: { OR: [{ followerId: userId }, { followingId: userId }] },
     });
@@ -580,13 +587,17 @@ export async function searchFriendsService(
     select: { followingId: true },
   });
 
-  const followingIds = following.map((f) => f.followingId);
+  const blockedUserIds = await getBlockedUserIdsForViewer(userId);
+  const blockedUserIdSet = new Set(blockedUserIds);
+  const followingIds = following
+    .map((f) => f.followingId)
+    .filter((followingId) => !blockedUserIdSet.has(followingId));
   const followingIdSet = new Set(followingIds);
 
   // Fetch all matching users except the requester
   const users = await prisma.user.findMany({
     where: {
-      id: { not: userId },
+      id: { not: userId, notIn: blockedUserIds },
       OR: [
         { name: { contains: query, mode: "insensitive" } },
         { email: { contains: query, mode: "insensitive" } },
@@ -668,7 +679,11 @@ export async function getHomeSummaryForUser(
       },
     }),
   ]);
-  const followingIds = following.map((f) => f.followingId);
+  const blockedUserIds = await getBlockedUserIdsForViewer(userId);
+  const blockedUserIdSet = new Set(blockedUserIds);
+  const followingIds = following
+    .map((f) => f.followingId)
+    .filter((followingId) => !blockedUserIdSet.has(followingId));
 
   const yourGoal = ownGoal
     ? {

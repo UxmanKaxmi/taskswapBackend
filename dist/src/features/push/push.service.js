@@ -7,6 +7,7 @@ const client_1 = require("../../db/client");
 const client_2 = require("@prisma/client");
 const AppError_1 = require("../../errors/AppError");
 const httpStatus_1 = require("../../types/httpStatus");
+const moderation_service_1 = require("../moderation/moderation.service");
 // 💪 Create a push for a motivation task. Repeated calls are idempotent.
 async function togglePushForTask({ userId, taskId, }) {
     const task = await client_1.prisma.task.findUnique({
@@ -18,6 +19,9 @@ async function togglePushForTask({ userId, taskId, }) {
     }
     if (task.userId === userId) {
         throw new AppError_1.AppError("You cannot push your own task", httpStatus_1.HttpStatus.FORBIDDEN);
+    }
+    if (await (0, moderation_service_1.isTaskHiddenForViewer)(task.userId, userId)) {
+        throw new AppError_1.AppError("This task is unavailable.", httpStatus_1.HttpStatus.FORBIDDEN);
     }
     if (task.completed) {
         throw new AppError_1.AppError("Completed tasks cannot receive pushes", httpStatus_1.HttpStatus.CONFLICT);

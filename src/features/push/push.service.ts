@@ -3,6 +3,7 @@ import { prisma } from "../../db/client";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
+import { isTaskHiddenForViewer } from "../moderation/moderation.service";
 
 type TogglePushInput = {
   userId: string;
@@ -28,6 +29,10 @@ export async function togglePushForTask({
 
   if (task.userId === userId) {
     throw new AppError("You cannot push your own task", HttpStatus.FORBIDDEN);
+  }
+
+  if (await isTaskHiddenForViewer(task.userId, userId)) {
+    throw new AppError("This task is unavailable.", HttpStatus.FORBIDDEN);
   }
 
   if (task.completed) {

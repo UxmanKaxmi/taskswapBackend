@@ -1,6 +1,7 @@
 // src/middleware/errorHandler.ts
 import { ErrorRequestHandler } from "express";
 import { Prisma } from "@prisma/client";
+import { ZodError } from "zod";
 import { AppError } from "../errors/AppError";
  
 /**
@@ -35,6 +36,14 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     res
       .status(err.statusCode)
       .json({ error: err.message, ...(err.details ? { details: err.details } : {}) });
+    return;
+  }
+
+  if (err instanceof ZodError) {
+    res.status(400).json({
+      error: "Validation error",
+      issues: err.errors,
+    });
     return;
   }
 

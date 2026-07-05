@@ -1,5 +1,8 @@
 import { prisma } from "../../db/client";
 import { CastVoteInput } from "./vote.types";
+import { AppError } from "../../errors/AppError";
+import { HttpStatus } from "../../types/httpStatus";
+import { isTaskHiddenForViewer } from "../moderation/moderation.service";
 
 // 🗳️ Cast or update a vote for a task
 export async function castVoteForTask({
@@ -18,11 +21,15 @@ export async function castVoteForTask({
   // Ensure task exists and is a decision with valid options
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { options: true, type: true },
+    select: { options: true, type: true, userId: true },
   });
 
   if (!task || task.type !== "decision") {
     throw new Error("Task not found or is not a decision type");
+  }
+
+  if (await isTaskHiddenForViewer(task.userId, userId)) {
+    throw new AppError("This task is unavailable.", HttpStatus.FORBIDDEN);
   }
 
   if (!task.options?.includes(chosen)) {

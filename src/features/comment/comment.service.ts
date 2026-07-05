@@ -7,8 +7,30 @@ import {
 } from "../notification/notification.service";
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { getCommentMentionPushText } from "../../utils/notificationTextCatalog";
+import { AppError } from "../../errors/AppError";
+import { HttpStatus } from "../../types/httpStatus";
+import { assertPostableContent } from "../../utils/contentModeration";
+import {
+  getBlockedUserIdsForViewer,
+  isTaskHiddenForViewer,
+} from "../moderation/moderation.service";
 
 export async function createComment(input: CreateCommentInput) {
+  assertPostableContent([input.text]);
+
+  const task = await prisma.task.findUnique({
+    where: { id: input.taskId },
+    select: { userId: true, isPublic: true },
+  });
+
+  if (!task || !task.isPublic) {
+    throw new AppError("Task not found.", HttpStatus.NOT_FOUND);
+  }
+
+  if (await isTaskHiddenForViewer(task.userId, input.userId)) {
+    throw new AppError("This task is hidden.", HttpStatus.NOT_FOUND);
+  }
+
   return prisma.$transaction(async (tx) => {
     // 1️⃣ Create comment
     const comment = await tx.comment.create({
@@ -68,8 +90,26 @@ export async function createComment(input: CreateCommentInput) {
 
 
 export async function getCommentsForTask(taskId: string, viewerId: string | null) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { userId: true, isPublic: true },
+  });
+
+  if (!task || !task.isPublic) {
+    throw new AppError("Task not found.", HttpStatus.NOT_FOUND);
+  }
+
+  if (await isTaskHiddenForViewer(task.userId, viewerId)) {
+    throw new AppError("This task is hidden.", HttpStatus.NOT_FOUND);
+  }
+
+  const blockedUserIds = await getBlockedUserIdsForViewer(viewerId);
   const comments = await prisma.comment.findMany({
-    where: { taskId },
+    where: {
+      taskId,
+      userId:
+        blockedUserIds.length > 0 ? { notIn: blockedUserIds } : undefined,
+    },
     orderBy: { createdAt: "desc" },
     include: {
       user: { select: { id: true, name: true, photo: true } },

@@ -7,6 +7,7 @@ import { schedulePush } from "../../utils/scheduleReminderPush";
 import { getTaskCheerPushText } from "../../utils/notificationTextCatalog";
 import { getActiveCheerPreset } from "./cheer.presets";
 import { AvatarUser, BeatCheerState, TaskCheerSummary } from "./cheer.types";
+import { isTaskHiddenForViewer } from "../moderation/moderation.service";
 
 const CHEER_SAMPLE_SIZE = 3;
 const CHEER_NOTIFICATION_GROUP_MS = 30 * 60 * 1000;
@@ -363,6 +364,10 @@ export async function cheerBeat({
               "You cannot cheer your own task.",
               HttpStatus.FORBIDDEN
             );
+          }
+
+          if (await isTaskHiddenForViewer(task.userId, userId)) {
+            throw new AppError("This task is unavailable.", HttpStatus.FORBIDDEN);
           }
 
           const push = await tx.push.findFirst({

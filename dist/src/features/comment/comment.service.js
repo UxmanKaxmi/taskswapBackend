@@ -7,7 +7,22 @@ const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const client_1 = require("../../db/client");
 const notification_service_1 = require("../notification/notification.service");
 const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
+const AppError_1 = require("../../errors/AppError");
+const httpStatus_1 = require("../../types/httpStatus");
+const contentModeration_1 = require("../../utils/contentModeration");
+const moderation_service_1 = require("../moderation/moderation.service");
 async function createComment(input) {
+    (0, contentModeration_1.assertPostableContent)([input.text]);
+    const task = await client_1.prisma.task.findUnique({
+        where: { id: input.taskId },
+        select: { userId: true, isPublic: true },
+    });
+    if (!task || !task.isPublic) {
+        throw new AppError_1.AppError("Task not found.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    if (await (0, moderation_service_1.isTaskHiddenForViewer)(task.userId, input.userId)) {
+        throw new AppError_1.AppError("This task is hidden.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
     return client_1.prisma.$transaction(async (tx) => {
         // 1️⃣ Create comment
         const comment = await tx.comment.create({
@@ -53,8 +68,22 @@ async function createComment(input) {
     });
 }
 async function getCommentsForTask(taskId, viewerId) {
+    const task = await client_1.prisma.task.findUnique({
+        where: { id: taskId },
+        select: { userId: true, isPublic: true },
+    });
+    if (!task || !task.isPublic) {
+        throw new AppError_1.AppError("Task not found.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    if (await (0, moderation_service_1.isTaskHiddenForViewer)(task.userId, viewerId)) {
+        throw new AppError_1.AppError("This task is hidden.", httpStatus_1.HttpStatus.NOT_FOUND);
+    }
+    const blockedUserIds = await (0, moderation_service_1.getBlockedUserIdsForViewer)(viewerId);
     const comments = await client_1.prisma.comment.findMany({
-        where: { taskId },
+        where: {
+            taskId,
+            userId: blockedUserIds.length > 0 ? { notIn: blockedUserIds } : undefined,
+        },
         orderBy: { createdAt: "desc" },
         include: {
             user: { select: { id: true, name: true, photo: true } },
