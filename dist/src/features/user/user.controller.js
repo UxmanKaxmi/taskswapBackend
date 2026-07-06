@@ -9,6 +9,7 @@ exports.handleToggleFollowUser = handleToggleFollowUser;
 exports.handleGetFollowers = handleGetFollowers;
 exports.handleGetFollowing = handleGetFollowing;
 exports.handleGetMe = handleGetMe;
+exports.handleGetMyImpact = handleGetMyImpact;
 exports.handleDeleteMe = handleDeleteMe;
 exports.handleGetHomeSummary = handleGetHomeSummary;
 exports.searchFriends = searchFriends;
@@ -173,6 +174,19 @@ async function handleGetMe(req, res, next) {
     }
     catch (err) {
         next(new AppError_1.AppError("Failed to fetch user profile", 500));
+    }
+}
+async function handleGetMyImpact(req, res, next) {
+    try {
+        const userId = req.user?.id;
+        if (!userId)
+            return next(new AppError_1.AppError("Unauthorized", 401));
+        const impact = await (0, user_service_3.getImpactForUser)(userId);
+        res.status(200).json(impact);
+    }
+    catch (err) {
+        console.error("[IMPACT_ERROR]", err);
+        next(new AppError_1.AppError("Failed to fetch impact stats", 500));
     }
 }
 async function handleDeleteMe(req, res, next) {

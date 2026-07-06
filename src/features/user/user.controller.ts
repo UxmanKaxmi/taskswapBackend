@@ -21,6 +21,7 @@ import {
   getFollowingCount,
   getTaskStatsForUser,
   getHomeSummaryForUser,
+  getImpactForUser,
 } from "./user.service";
 
 export async function handleSyncUser(
@@ -228,6 +229,23 @@ export async function handleGetMe(
     });
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
+  }
+}
+
+export async function handleGetMyImpact(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return next(new AppError("Unauthorized", 401));
+
+    const impact = await getImpactForUser(userId);
+    res.status(200).json(impact);
+  } catch (err) {
+    console.error("[IMPACT_ERROR]", err);
+    next(new AppError("Failed to fetch impact stats", 500));
   }
 }
 

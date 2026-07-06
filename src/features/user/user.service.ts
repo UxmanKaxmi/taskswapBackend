@@ -10,6 +10,7 @@ import {
   revokeAppleRefreshToken,
 } from "./appleAuth.service";
 import { getBlockedUserIdsForViewer } from "../moderation/moderation.service";
+import { toPublicUser, PublicUserRecord } from "./user.serializers";
 
 export async function syncUserToDB({
   id,
@@ -958,5 +959,108 @@ export async function getUserProfileById(
     taskSuccessRate: taskStats.successRate,
     tasksDone: taskStats.tasksDone,
     dayStreak: taskStats.dayStreak,
+  };
+}
+
+const MS_PER_DAY = 86_400_000;
+
+// Giving-first stats for the private "Your impact" screen. All "task"
+// wording is the server contract; the client renders these as goals.
+export async function getImpactForUser(userId: string) {
+  const publicUserSelect = {
+    id: true,
+    name: true,
+    username: true,
+    photo: true,
+    avatarInitial: true,
+    avatarColor: true,
+  } as const;
+
+  const [
+    pushesGiven,
+    cheersSent,
+    tasksFinished,
+    cheersReceived,
+    pushesReceived,
+    cheersOnCompletedTasks,
+  ] = await Promise.all([
+    prisma.push.findMany({
+      where: { userId },
+      select: {
+        task: {
+          select: { completed: true, user: { select: publicUserSelect } },
+        },
+      },
+    }),
+    prisma.cheer.count({ where: { userId } }),
+    prisma.task.count({ where: { userId, completed: true } }),
+    prisma.cheer.count({ where: { userId: { not: userId }, task: { userId } } }),
+    prisma.push.count({ where: { userId: { not: userId }, task: { userId } } }),
+    prisma.cheer.findMany({
+      where: { userId, task: { completed: true, userId: { not: userId } } },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+      select: {
+        presetTextSnapshot: true,
+        createdAt: true,
+        task: {
+          select: {
+            text: true,
+            completedAt: true,
+            user: { select: publicUserSelect },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const ownersPushed = new Map<string, PublicUserRecord>();
+  const ownersHelped = new Map<string, PublicUserRecord>();
+  for (const push of pushesGiven) {
+    const owner = push.task.user;
+    ownersPushed.set(owner.id, owner);
+    if (push.task.completed) ownersHelped.set(owner.id, owner);
+  }
+
+  // "The cheer that mattered most": the cheer with the shortest gap between
+  // cheering and the task getting finished.
+  const bestCheer = cheersOnCompletedTasks
+    .filter(
+      (cheer) =>
+        cheer.task.completedAt &&
+        cheer.task.completedAt.getTime() >= cheer.createdAt.getTime()
+    )
+    .sort(
+      (a, b) =>
+        a.task.completedAt!.getTime() -
+        a.createdAt.getTime() -
+        (b.task.completedAt!.getTime() - b.createdAt.getTime())
+    )[0];
+
+  return {
+    peopleHelped: {
+      count: ownersHelped.size,
+      preview: [...ownersHelped.values()].slice(0, 6).map(toPublicUser),
+    },
+    giving: {
+      peoplePushed: ownersPushed.size,
+      cheersSent,
+      tasksBacked: pushesGiven.length,
+    },
+    topCheer: bestCheer
+      ? {
+          recipient: toPublicUser(bestCheer.task.user),
+          taskText: bestCheer.task.text,
+          cheerText: bestCheer.presetTextSnapshot,
+          cheeredAt: bestCheer.createdAt.toISOString(),
+          completedAt: bestCheer.task.completedAt!.toISOString(),
+          daysToFinish: Math.round(
+            (bestCheer.task.completedAt!.getTime() -
+              bestCheer.createdAt.getTime()) /
+              MS_PER_DAY
+          ),
+        }
+      : null,
+    journey: { tasksFinished, cheersReceived, pushesReceived },
   };
 }

@@ -8,6 +8,7 @@ import {
   handleGetFollowing,
   handleGetHomeSummary,
   handleGetMe,
+  handleGetMyImpact,
   handleGetUserProfile,
   handleMatchUsers,
   handleSyncUser,
@@ -42,6 +43,9 @@ router.delete("/me", requireJwtAuth, handleDeleteMe);
 
 // Home dashboard summary for the logged-in user
 router.get("/me/home-summary", requireAuth, handleGetHomeSummary);
+
+// Private giving-first stats for the "Your impact" screen
+router.get("/me/impact", requireAuth, handleGetMyImpact);
 
 // Search friends (still requires auth)
 router.get("/search-friends", requireAuth, searchFriends);

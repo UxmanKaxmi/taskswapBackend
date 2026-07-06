@@ -14,6 +14,7 @@ exports.getTaskStatsForUser = getTaskStatsForUser;
 exports.searchFriendsService = searchFriendsService;
 exports.getHomeSummaryForUser = getHomeSummaryForUser;
 exports.getUserProfileById = getUserProfileById;
+exports.getImpactForUser = getImpactForUser;
 const client_1 = require("../../db/client");
 const AppError_1 = require("../../errors/AppError");
 const httpStatus_1 = require("../../types/httpStatus");
@@ -22,6 +23,7 @@ const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog")
 const seededUser_service_1 = require("../seededUser/seededUser.service");
 const appleAuth_service_1 = require("./appleAuth.service");
 const moderation_service_1 = require("../moderation/moderation.service");
+const user_serializers_1 = require("./user.serializers");
 async function syncUserToDB({ id, email, name, photo, fcmToken, provider, providerUserId, authorizationCode, }) {
     const appleRefreshToken = provider === "apple"
         ? await getAppleRefreshTokenFromAuthorizationCode(authorizationCode)
@@ -763,5 +765,88 @@ async function getUserProfileById(targetUserId, currentUserId) {
         taskSuccessRate: taskStats.successRate,
         tasksDone: taskStats.tasksDone,
         dayStreak: taskStats.dayStreak,
+    };
+}
+const MS_PER_DAY = 86400000;
+// Giving-first stats for the private "Your impact" screen. All "task"
+// wording is the server contract; the client renders these as goals.
+async function getImpactForUser(userId) {
+    const publicUserSelect = {
+        id: true,
+        name: true,
+        username: true,
+        photo: true,
+        avatarInitial: true,
+        avatarColor: true,
+    };
+    const [pushesGiven, cheersSent, tasksFinished, cheersReceived, pushesReceived, cheersOnCompletedTasks,] = await Promise.all([
+        client_1.prisma.push.findMany({
+            where: { userId },
+            select: {
+                task: {
+                    select: { completed: true, user: { select: publicUserSelect } },
+                },
+            },
+        }),
+        client_1.prisma.cheer.count({ where: { userId } }),
+        client_1.prisma.task.count({ where: { userId, completed: true } }),
+        client_1.prisma.cheer.count({ where: { userId: { not: userId }, task: { userId } } }),
+        client_1.prisma.push.count({ where: { userId: { not: userId }, task: { userId } } }),
+        client_1.prisma.cheer.findMany({
+            where: { userId, task: { completed: true, userId: { not: userId } } },
+            orderBy: { createdAt: "desc" },
+            take: 25,
+            select: {
+                presetTextSnapshot: true,
+                createdAt: true,
+                task: {
+                    select: {
+                        text: true,
+                        completedAt: true,
+                        user: { select: publicUserSelect },
+                    },
+                },
+            },
+        }),
+    ]);
+    const ownersPushed = new Map();
+    const ownersHelped = new Map();
+    for (const push of pushesGiven) {
+        const owner = push.task.user;
+        ownersPushed.set(owner.id, owner);
+        if (push.task.completed)
+            ownersHelped.set(owner.id, owner);
+    }
+    // "The cheer that mattered most": the cheer with the shortest gap between
+    // cheering and the task getting finished.
+    const bestCheer = cheersOnCompletedTasks
+        .filter((cheer) => cheer.task.completedAt &&
+        cheer.task.completedAt.getTime() >= cheer.createdAt.getTime())
+        .sort((a, b) => a.task.completedAt.getTime() -
+        a.createdAt.getTime() -
+        (b.task.completedAt.getTime() - b.createdAt.getTime()))[0];
+    return {
+        peopleHelped: {
+            count: ownersHelped.size,
+            preview: [...ownersHelped.values()].slice(0, 6).map(user_serializers_1.toPublicUser),
+        },
+        giving: {
+            peoplePushed: ownersPushed.size,
+            cheersSent,
+            tasksBacked: pushesGiven.length,
+        },
+        topCheer: bestCheer
+            ? {
+                recipient: (0, user_serializers_1.toPublicUser)(bestCheer.task.user),
+                taskText: bestCheer.task.text,
+                cheerText: bestCheer.presetTextSnapshot,
+                cheeredAt: bestCheer.createdAt.toISOString(),
+                completedAt: bestCheer.task.completedAt.toISOString(),
+                daysToFinish: Math.round((bestCheer.task.completedAt.getTime() -
+                    bestCheer.createdAt.getTime()) /
+                    MS_PER_DAY),
+            }
+            : null,
+        journey: { tasksFinished, cheersReceived, pushesReceived },
     };
 }

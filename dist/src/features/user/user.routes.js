@@ -22,6 +22,8 @@ router.get("/me", requireAuth_1.requireAuth, user_controller_1.handleGetMe);
 router.delete("/me", requireJwtAuth_1.requireJwtAuth, user_controller_1.handleDeleteMe);
 // Home dashboard summary for the logged-in user
 router.get("/me/home-summary", requireAuth_1.requireAuth, user_controller_1.handleGetHomeSummary);
+// Private giving-first stats for the "Your impact" screen
+router.get("/me/impact", requireAuth_1.requireAuth, user_controller_1.handleGetMyImpact);
 // Search friends (still requires auth)
 router.get("/search-friends", requireAuth_1.requireAuth, user_controller_1.searchFriends);
 // ⭐ PUBLIC PROFILE VIEW — FIXED
