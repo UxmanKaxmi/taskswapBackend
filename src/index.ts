@@ -1,6 +1,6 @@
 // index.ts
 import "./config/env";
-import express, { Router } from "express"; // ✅ Add Router here
+import express, { RequestHandler, Router } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -28,6 +28,29 @@ import { errorHandler } from "./middleware/errorHandler";
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
+function getPositiveIntEnv(name: string, fallback: number) {
+  const value = process.env[name];
+  if (!value) return fallback;
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getTrustProxySetting() {
+  const configured = process.env.TRUST_PROXY;
+
+  if (!configured) {
+    return process.env.NODE_ENV === "production" ? 1 : false;
+  }
+
+  if (configured === "true") return 1;
+  if (configured === "false") return false;
+
+  const parsed = Number.parseInt(configured, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : false;
+}
+
+app.set("trust proxy", getTrustProxySetting());
 app.use(helmet());
 
 // Restrict CORS to configured origins when ALLOWED_ORIGINS is set
@@ -49,25 +72,50 @@ app.use(express.json());
 
 // Basic rate limiting across all routes; write-heavy endpoints get a tighter
 // limit registered below.
-app.use(
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
+const enableRateLimits = process.env.NODE_ENV !== "test";
+const rateLimitWindowMs = getPositiveIntEnv(
+  "RATE_LIMIT_WINDOW_MS",
+  15 * 60 * 1000
 );
+const globalRateLimitMax = getPositiveIntEnv(
+  "GLOBAL_RATE_LIMIT_MAX",
+  process.env.NODE_ENV === "production" ? 1200 : 5000
+);
+const writeRateLimitMax = getPositiveIntEnv(
+  "WRITE_RATE_LIMIT_MAX",
+  process.env.NODE_ENV === "production" ? 100 : 1000
+);
+const rateLimitMessage = {
+  error: "Too many requests. Please wait a moment and try again.",
+};
+
+if (enableRateLimits) {
+  app.use(
+    rateLimit({
+      windowMs: rateLimitWindowMs,
+      max: globalRateLimitMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: rateLimitMessage,
+      skip: (req) => req.path === "/health",
+    })
+  );
+}
 
 // Tighter limit for mutations only. Mounted on routers that also serve reads,
 // so skip safe methods — GET/HEAD are covered by the global limiter above and
 // must not be throttled (e.g. feed pagination, opening task detail).
-const writeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: req => req.method === "GET" || req.method === "HEAD",
-});
+const noopLimiter: RequestHandler = (_req, _res, next) => next();
+const writeLimiter = enableRateLimits
+  ? rateLimit({
+      windowMs: rateLimitWindowMs,
+      max: writeRateLimitMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: rateLimitMessage,
+      skip: (req) => req.method === "GET" || req.method === "HEAD",
+    })
+  : noopLimiter;
 
 // Health-check endpoint for uptime monitoring
 app.get("/health", (_req, res) => {
