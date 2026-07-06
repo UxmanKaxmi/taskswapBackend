@@ -224,6 +224,7 @@ async function createSeededPushForTaskUser({
       taskId,
       taskOwnerId: task.userId,
       pushCount,
+      triggeredByUserId: pusherId,
     });
 
     return true;

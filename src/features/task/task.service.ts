@@ -25,6 +25,12 @@ import {
   createTaskProgressUpdateNotifications,
 } from "../notification/notification.service";
 import { scheduleSeededPushesForTask } from "../seededPush/seededPush.service";
+import {
+  cancelScheduledPushesForTask,
+  createScheduledPush,
+} from "../notification/scheduledPush.service";
+import { anonOwnerId, generateAnonIdentity } from "../../utils/anonIdentity";
+import { isMaskedForViewer } from "./task.serializers";
 import { getTaskCheerSummaryForTask } from "../cheer/cheer.service";
 import { assertPostableContent } from "../../utils/contentModeration";
 import {
@@ -47,6 +53,9 @@ type FeedTask = {
   completed: boolean;
   completedAt: Date | null;
   isPublic: boolean;
+  isAnonymous: boolean;
+  anonAlias: string | null;
+  anonAvatarColor: string | null;
   viewCount: number;
   helpers: {
     id: string;
@@ -222,7 +231,7 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
   }
 
   return tasks.map((task) => {
-    const { _count, ...cleanTask } = task;
+    const { _count, anonAlias, anonAvatarColor, ...cleanTask } = task;
     const taskVotes = voteMap[task.id] || {};
 
     const transformedVotes = Object.fromEntries(
@@ -232,8 +241,16 @@ async function transformTasksForFeed(tasks: FeedTask[], userId?: string | null) 
       ])
     );
 
+    // Anonymous tasks: replace the owner's identity with the task's alias for
+    // everyone but the owner. The fake id never resolves to a profile.
+    const masked = isMaskedForViewer(task, viewerId);
+
     return {
       ...cleanTask,
+      userId: masked ? anonOwnerId(task.id) : task.userId,
+      name: masked ? anonAlias ?? "Anonymous" : task.name,
+      avatar: masked ? "" : task.avatar,
+      ...(masked && anonAvatarColor ? { avatarColor: anonAvatarColor } : {}),
       commentsCount: task._count.Comment,
       reminderNoteCount: task._count.ReminderNote,
       voteCount: task._count.Vote,
@@ -428,6 +445,32 @@ export async function createTask(input: CreateTaskInput) {
   const avatar = input.avatar ?? user.photo ?? undefined;
   const name = user.name;
 
+  const isAnonymous = input.isAnonymous === true;
+  let anonIdentity: { alias: string; avatarColor: string } | null = null;
+
+  if (isAnonymous) {
+    if (hasHelpers(input) && input.helpers?.length) {
+      throw new AppError(
+        "Anonymous goals can't tag friends.",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    const activeAnon = await prisma.task.findFirst({
+      where: { userId, isAnonymous: true, completed: false },
+      select: { id: true },
+    });
+
+    if (activeAnon) {
+      throw new AppError(
+        "You already have an active anonymous goal. Complete it before starting another.",
+        HttpStatus.CONFLICT
+      );
+    }
+
+    anonIdentity = generateAnonIdentity();
+  }
+
   const remindAt = type === "reminder" ? (input as ReminderTaskType).remindAt : undefined;
   
   if (type === "decision") {
@@ -446,7 +489,9 @@ const options =
       ? { connect: input.helpers.map((id) => ({ id })) }
       : undefined;
 
-  const createdTask = await prisma.$transaction(async (tx) => {
+  let createdTask;
+  try {
+    createdTask = await prisma.$transaction(async (tx) => {
     const task = await tx.task.create({
       data: {
         text,
@@ -455,6 +500,9 @@ const options =
         isPublic: true,
         avatar,
         name,
+        isAnonymous,
+        anonAlias: anonIdentity?.alias,
+        anonAvatarColor: anonIdentity?.avatarColor,
         feeling: input.feeling ?? null,
         remindAt,
         options,
@@ -474,20 +522,42 @@ const options =
 
     return task;
   });
+  } catch (error) {
+    // Partial unique index: one ACTIVE anonymous task per user. Concurrent
+    // creates race past the pre-check; the index is the real guarantee.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      isAnonymous
+    ) {
+      throw new AppError(
+        "You already have an active anonymous goal. Complete it before starting another.",
+        HttpStatus.CONFLICT
+      );
+    }
+    throw error;
+  }
 
   /* ---------------------------
      Schedule reminder push
   ----------------------------- */
-  if (type === "reminder" && remindAt && user.fcmToken) {
-    const delayMs = new Date(remindAt).getTime() - Date.now();
-    if (delayMs > 0) {
+  if (type === "reminder" && remindAt) {
+    const deliverAt = new Date(remindAt);
+    if (deliverAt.getTime() > Date.now()) {
       const { title, body } = getTaskReminderPushNotificationText(text);
-      schedulePush(delayMs, user.fcmToken, title, body, {
-        notificationType: "reminder",
+      await createScheduledPush({
+        userId,
         taskId: createdTask.id,
-        taskType: "reminder",
-        deeplinkPath: `/tasks/${createdTask.id}`,
-        screen: "TaskDetail",
+        deliverAt,
+        title,
+        body,
+        data: {
+          notificationType: "reminder",
+          taskId: createdTask.id,
+          taskType: "reminder",
+          deeplinkPath: `/tasks/${createdTask.id}`,
+          screen: "TaskDetail",
+        },
       });
     }
   }
@@ -549,7 +619,7 @@ export async function updateTask(
 ) {
   const currentTask = await prisma.task.findUnique({
     where: { id },
-    select: { userId: true, type: true },
+    select: { userId: true, type: true, isAnonymous: true },
   });
 
   if (!currentTask) {
@@ -558,6 +628,26 @@ export async function updateTask(
 
   if (currentTask.userId !== userId) {
     throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
+  }
+
+  // Anonymity is a one-way door: named→anon is never allowed (the goal has
+  // already been seen with a name), and anon→named only happens through the
+  // explicit reveal endpoint.
+  if (
+    data.isAnonymous !== undefined &&
+    data.isAnonymous !== currentTask.isAnonymous
+  ) {
+    throw new AppError(
+      "Anonymity can't be changed here. Anonymous goals can be revealed from the goal screen.",
+      HttpStatus.BAD_REQUEST
+    );
+  }
+
+  if (currentTask.isAnonymous && "helpers" in data && data.helpers?.length) {
+    throw new AppError(
+      "Anonymous goals can't tag friends.",
+      HttpStatus.BAD_REQUEST
+    );
   }
 
   if (data.text || "options" in data) {
@@ -601,11 +691,41 @@ export async function updateTask(
       : {}),
   };
 
-  return prisma.task.update({
+  const updatedTask = await prisma.task.update({
     where: { id },
     data: dataToUpdate,
     include: { helpers: true },
   });
+
+  // Reschedule the reminder push when the reminder time or type changes.
+  const reminderAffected = "remindAt" in data || "type" in data || "text" in data;
+  if (reminderAffected) {
+    await cancelScheduledPushesForTask(id);
+
+    if (
+      updatedTask.type === "reminder" &&
+      updatedTask.remindAt &&
+      updatedTask.remindAt.getTime() > Date.now()
+    ) {
+      const { title, body } = getTaskReminderPushNotificationText(updatedTask.text);
+      await createScheduledPush({
+        userId: updatedTask.userId,
+        taskId: id,
+        deliverAt: updatedTask.remindAt,
+        title,
+        body,
+        data: {
+          notificationType: "reminder",
+          taskId: id,
+          taskType: "reminder",
+          deeplinkPath: `/tasks/${id}`,
+          screen: "TaskDetail",
+        },
+      });
+    }
+  }
+
+  return updatedTask;
 }
 
 /* -------------------------------------------------------
@@ -684,7 +804,8 @@ export async function getTaskById(taskId: string, userId?: string | null) {
     : null;
 
   const hasVoted = userId ? votedOption !== null : false;
-  const { Vote, progressUpdates, Push, ...taskData } = task;
+  const { Vote, progressUpdates, Push, anonAlias, anonAvatarColor, ...taskData } = task;
+  const maskedForViewer = isMaskedForViewer(task, userId);
   const progressUpdateHistory = progressUpdates
     .map((entry) => toProgressUpdateSummary(entry))
     .filter((entry): entry is TaskProgressUpdateSummary => entry !== null);
@@ -755,6 +876,10 @@ export async function getTaskById(taskId: string, userId?: string | null) {
 
   return {
     ...taskData,
+    userId: maskedForViewer ? anonOwnerId(task.id) : task.userId,
+    name: maskedForViewer ? anonAlias ?? "Anonymous" : task.name,
+    avatar: maskedForViewer ? "" : task.avatar,
+    ...(maskedForViewer && anonAvatarColor ? { avatarColor: anonAvatarColor } : {}),
     votes,
     votedOption,
     viewCount: task.viewCount,
@@ -857,7 +982,11 @@ export async function getRecentTasksForUserProfile(
   }
 
   const recentTasks = await prisma.task.findMany({
-    where: { userId: targetUserId },
+    where: {
+      userId: targetUserId,
+      // Anonymous goals never appear on a profile — only the owner sees them.
+      ...(currentUserId === targetUserId ? {} : { isAnonymous: false }),
+    },
     include: {
       helpers: { select: { id: true, name: true, email: true, photo: true } },
       _count: { select: { Comment: true, ReminderNote: true, Vote: true, helpers: true, Push: true } },
@@ -875,6 +1004,37 @@ export async function getRecentTasksForUserProfile(
   return transformTasksForFeed(recentTasks as FeedTask[], currentUserId);
 }
 /* -------------------------------------------------------
+   REVEAL ANONYMOUS TASK (one-way: anon → named)
+--------------------------------------------------------- */
+
+export async function revealTask(taskId: string, userId: string) {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { userId: true, isAnonymous: true },
+  });
+
+  if (!task) {
+    throw new AppError("Task not found.", HttpStatus.NOT_FOUND);
+  }
+
+  if (task.userId !== userId) {
+    throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
+  }
+
+  if (!task.isAnonymous) {
+    throw new AppError("This goal is already posted with your name.", HttpStatus.BAD_REQUEST);
+  }
+
+  // anonAlias is kept on the row for history/moderation; it simply stops
+  // being used once isAnonymous is false.
+  return prisma.task.update({
+    where: { id: taskId },
+    data: { isAnonymous: false },
+    include: { helpers: true },
+  });
+}
+
+/* -------------------------------------------------------
    DELETE TASK
 --------------------------------------------------------- */
 
@@ -890,6 +1050,7 @@ export async function deleteTask(id: string, userId: string) {
   }
 
   await prisma.vote.deleteMany({ where: { taskId: id } });
+  await cancelScheduledPushesForTask(id);
 
   return prisma.task.delete({ where: { id } });
 }
@@ -979,6 +1140,8 @@ export async function shareTaskProgress(
       type: true,
       text: true,
       name: true,
+      isAnonymous: true,
+      anonAlias: true,
       completed: true,
       Push: {
         select: { userId: true },
@@ -1036,7 +1199,11 @@ export async function shareTaskProgress(
     }
   }
 
-  const senderName = task.name.trim() || "Someone";
+  // Outbound notifications about an anonymous goal always use the alias —
+  // supporters must never see the owner's real name.
+  const senderName = task.isAnonymous
+    ? task.anonAlias ?? "Anonymous"
+    : task.name.trim() || "Someone";
   const recipientIds = [
     ...new Set([
       ...task.Push.map((push) => push.userId),

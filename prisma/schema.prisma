@@ -26,6 +26,9 @@ model Task {
   completed        Boolean          @default(false)
   completedAt      DateTime?
   isPublic         Boolean          @default(true)
+  isAnonymous      Boolean          @default(false)
+  anonAlias        String?
+  anonAvatarColor  String?
   Comment          Comment[]
   cheers           Cheer[]
   beats            TaskBeat[]
@@ -81,9 +84,32 @@ model User {
   helping                    Task[]           @relation("TaskHelpers")
   feedback                   Feedback[]
   authAccounts               AuthAccount[]
+  scheduledPushes            ScheduledPush[]
 
   @@unique([provider, providerUserId])
   @@index([origin])
+}
+
+model ScheduledPush {
+  id         String    @id @default(uuid())
+  userId     String
+  taskId     String?
+  title      String
+  body       String
+  data       Json?
+  deliverAt  DateTime
+  sentAt     DateTime?
+  canceledAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deliverAt, sentAt, canceledAt])
+  @@index([taskId])
+}
+
+model JobLock {
+  name     String   @id
+  lockedAt DateTime
 }
 
 model TaskReport {

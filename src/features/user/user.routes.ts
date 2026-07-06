@@ -14,6 +14,7 @@ import {
   handleSyncUser,
   handleToggleFollowUser,
   handleDeleteMe,
+  handleUpdateFcmToken,
   searchFriends,
 } from "./user.controller";
 import { requireAuth } from "../../middleware/requireAuth";
@@ -37,6 +38,10 @@ router.get("/followers", optionalAuth, handleGetFollowers);
 router.get("/following", optionalAuth, handleGetFollowing);
 
 router.get("/me", requireAuth, handleGetMe);
+
+// FCM token refresh — works for any auth provider (Google, Apple) since it
+// uses the backend JWT instead of a provider identity token
+router.patch("/me/fcm-token", requireAuth, handleUpdateFcmToken);
 
 // Account deletion (Apple 5.1.1(v)) — identity comes from the token, not params
 router.delete("/me", requireJwtAuth, handleDeleteMe);

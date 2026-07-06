@@ -3,7 +3,11 @@ import { prisma } from "../../db/client";
 import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
 import { getRecentTasksForUserProfile } from "../task/task.service";
-import { getFollowNotificationMessage } from "../../utils/notificationTextCatalog";
+import {
+  getFollowNotificationMessage,
+  getFollowPushText,
+} from "../../utils/notificationTextCatalog";
+import { sendPushNotification } from "../../utils/sendPushNotification";
 import { USER_ORIGIN } from "../seededUser/seededUser.service";
 import {
   exchangeAppleAuthorizationCode,
@@ -122,6 +126,16 @@ export async function syncUserToDB({
     }
 
     return user;
+  });
+}
+
+// Lightweight token refresh used by the app whenever FCM rotates the token.
+// Authenticated with the backend JWT, so it works for every auth provider.
+export async function updateFcmToken(userId: string, fcmToken: string) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { fcmToken },
+    select: { id: true },
   });
 }
 
@@ -428,6 +442,19 @@ export async function toggleFollowUser(
       },
     });
 
+    const followedUser = await prisma.user.findUnique({
+      where: { id: followingId },
+      select: { fcmToken: true },
+    });
+
+    if (followedUser?.fcmToken) {
+      const { title, body } = getFollowPushText(follower?.name ?? "Someone");
+      await sendPushNotification(followedUser.fcmToken, title, body, {
+        notificationType: "follow",
+        screen: "NotificationMainScreen",
+      });
+    }
+
     return { success: true, action: "followed" };
   } catch (err) {
     console.error("❌ [toggleFollowUser ERROR]", err);
@@ -724,12 +751,14 @@ export async function getHomeSummaryForUser(
       select: { userId: true },
     }),
     // Most recent completed motivation task the current user pushed → success story.
+    // Anonymous goals are excluded: the card names its owner by design.
     prisma.task.findFirst({
       where: {
         completed: true,
         completedAt: { not: null },
         userId: { in: followingIds },
         type: "motivation",
+        isAnonymous: false,
         Push: { some: { userId } },
       },
       orderBy: { completedAt: "desc" },

@@ -14,6 +14,22 @@ export function getMotivationMilestoneNotificationText(pushCount: number) {
   };
 }
 
+// Sent to earlier pushers when a goal they pushed crosses a push milestone.
+export function getPushedTaskMilestoneNotificationText(pushCount: number) {
+  return {
+    title: "🔥 Your push is paying off",
+    body: `${pushCount} people have now pushed the goal you pushed.`,
+  };
+}
+
+// Inbox message for the same event — includes the goal text for context.
+export function getPushedTaskMilestoneNotificationMessage(
+  pushCount: number,
+  taskText: string
+) {
+  return `${pushCount} people have now pushed "${taskText}"`;
+}
+
 export function getMotivationPushNotificationText(taskText: string) {
   return {
     title: "💪 You got a push",
@@ -156,6 +172,20 @@ export function getReminderReceivedNotificationMessage(senderName: string) {
 
 export function getFollowNotificationMessage(followerName: string) {
   return `${followerName} followed you`;
+}
+
+export function getFollowPushText(followerName: string) {
+  return {
+    title: "🎉 New follower",
+    body: `${followerName} started following you`,
+  };
+}
+
+export function getTaskAdvicePushText(taskText: string) {
+  return {
+    title: "💡 New advice on your goal",
+    body: `Someone shared advice on "${taskText}"`,
+  };
 }
 
 export function getReferralShareText() {

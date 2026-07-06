@@ -1,4 +1,3 @@
-// index.ts
 import "./config/env";
 import express, { RequestHandler, Router } from "express";
 import cors from "cors";
@@ -14,6 +13,7 @@ import referralRoutes from "./features/referral/referral.routes";
 import pushRoutes from "./features/push/push.routes";
 import featureFlagsRoutes from "./features/featureFlags/featureFlags.routes";
 import { startNotificationReminderSweep } from "./features/notification/notificationReminderSweep.service";
+import { startScheduledPushDispatcher } from "./features/notification/scheduledPush.service";
 import feedbackRoutes from "./features/feedback/feedback.routes";
 import cheerRoutes from "./features/cheer/cheer.routes";
 import {
@@ -158,6 +158,7 @@ async function startServer() {
   try {
     await prisma.$connect();
     startNotificationReminderSweep();
+    startScheduledPushDispatcher();
     console.log("✅ Connected to the PostgreSQL database");
 
     app.listen(PORT,"0.0.0.0", () => {

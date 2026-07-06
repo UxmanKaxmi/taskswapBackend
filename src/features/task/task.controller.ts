@@ -8,6 +8,7 @@ import {
   increaseTaskViewCount,
   markTaskAsDone,
   markTaskAsNotDone,
+  revealTask,
   shareTaskProgress,
   updateTask,
 } from "./task.service";
@@ -241,6 +242,33 @@ export async function handleMarkTaskAsDone(
     res.status(200).json(updated);
   } catch (error) {
     console.error("[TASK_COMPLETE_ERROR]", error);
+    next(error);
+  }
+}
+
+/* -------------------------------------------------------
+   REVEAL ANONYMOUS TASK (AUTH REQUIRED, one-way)
+---------------------------------------------------------*/
+export async function handleRevealTask(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const taskId = getParamString(req.params.id);
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return next(new BadRequestError("User ID is required"));
+  }
+  if (!taskId) {
+    return next(new BadRequestError("Task ID is required"));
+  }
+
+  try {
+    const revealed = await revealTask(taskId, userId);
+    res.status(200).json(revealed);
+  } catch (error) {
+    console.error("[TASK_REVEAL_ERROR]", error);
     next(error);
   }
 }

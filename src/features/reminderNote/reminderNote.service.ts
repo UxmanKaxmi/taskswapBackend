@@ -31,6 +31,20 @@ export async function sendReminderNote({
   if (task.userId === senderId)
     throw new BadRequestError("You cannot remind yourself.");
 
+  // Prevent duplicate reminders from same user — validated before any push
+  // goes out so a rejected request never notifies the task owner.
+  const existing = await prisma.reminderNote.findFirst({
+    where: { taskId, senderId },
+  });
+
+  if (existing) {
+    throw new BadRequestError("You already sent a reminder for this task.");
+  }
+
+  const reminder = await prisma.reminderNote.create({
+    data: { taskId, senderId, message },
+  });
+
   // Notify task owner via push
   if (task.user?.fcmToken) {
     const { title, body } = getReminderNoteNotificationText(message);
@@ -47,19 +61,6 @@ export async function sendReminderNote({
       }
     );
   }
-
-  // Prevent duplicate reminders from same user
-  const existing = await prisma.reminderNote.findFirst({
-    where: { taskId, senderId },
-  });
-
-  if (existing) {
-    throw new BadRequestError("You already sent a reminder for this task.");
-  }
-
-  const reminder = await prisma.reminderNote.create({
-    data: { taskId, senderId, message },
-  });
 
   const sender = await prisma.user.findUnique({
     where: { id: senderId },

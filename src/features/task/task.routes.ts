@@ -6,6 +6,7 @@ import {
   handleDeleteTask,
   handleMarkTaskAsDone,
   handleMarkTaskNotDone,
+  handleRevealTask,
   handleShareTaskProgress,
   handleGetTaskById,
   handleGetTaskViewCount,
@@ -42,6 +43,9 @@ router.delete("/:id", requireAuth, handleDeleteTask);
 // ---------------------------
 router.patch("/:id/complete", requireAuth, handleMarkTaskAsDone);
 router.patch("/:id/incomplete", requireAuth, handleMarkTaskNotDone);
+
+// Reveal an anonymous goal (one-way: anon → named)
+router.post("/:id/reveal", requireAuth, handleRevealTask);
 router.post("/:id/progress", requireAuth, handleShareTaskProgress);
 
 

@@ -8,6 +8,7 @@ import {
   syncUserToDB,
   toggleFollowUser,
   deleteMyAccount,
+  updateFcmToken,
 } from "./user.service";
 import jwt from "jsonwebtoken";
 import { User } from "@prisma/client";
@@ -65,6 +66,31 @@ export async function handleSyncUser(
     console.error("[USER_API_ERROR]", error);
     if (error instanceof AppError) return next(error);
     next(new AppError("Failed to sync user", 500));
+  }
+}
+
+export async function handleUpdateFcmToken(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const userId = req.user?.id;
+  const { fcmToken } = req.body ?? {};
+
+  if (!userId) {
+    return next(new AppError("Unauthorized", 401));
+  }
+
+  if (typeof fcmToken !== "string" || !fcmToken.trim()) {
+    return next(new BadRequestError("`fcmToken` is required"));
+  }
+
+  try {
+    await updateFcmToken(userId, fcmToken.trim());
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("[FCM_TOKEN_UPDATE_ERROR]", error);
+    next(new AppError("Failed to update FCM token", 500));
   }
 }
 

@@ -110,6 +110,7 @@ export async function togglePushForTask({
     taskId,
     taskOwnerId: task.userId,
     pushCount,
+    triggeredByUserId: userId,
   });
 
   return {

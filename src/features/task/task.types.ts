@@ -21,6 +21,7 @@ interface TaskBase {
   avatar?: string;
   name?: string;
   feeling?: FeelingTag | null;
+  isAnonymous?: boolean;
 }
 
 /**
