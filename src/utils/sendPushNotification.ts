@@ -76,3 +76,43 @@ export async function sendPushNotification(
     return false;
   }
 }
+
+// Data-only ("silent") push: no notification block, so the OS never shows a
+// banner. The client reads `data` in its foreground FCM handler and renders an
+// in-app UI (e.g. the "X pushed you" pill). On iOS this requires the
+// content-available background flag; on Android a high-priority data message.
+export async function sendSilentPushNotification(
+  token: string,
+  data: Record<string, string>
+): Promise<boolean> {
+  try {
+    await admin.messaging().send({
+      token,
+      data,
+      android: {
+        priority: "high",
+      },
+      apns: {
+        headers: {
+          "apns-push-type": "background",
+          // Silent pushes must use priority 5; 10 is rejected for background.
+          "apns-priority": "5",
+        },
+        payload: {
+          aps: {
+            contentAvailable: true,
+          },
+        },
+      },
+    });
+    return true;
+  } catch (error: any) {
+    console.error("❌ FCM silent Error:", error?.code ?? error);
+
+    if (error?.code && DEAD_TOKEN_ERROR_CODES.has(error.code)) {
+      await clearDeadToken(token);
+    }
+
+    return false;
+  }
+}

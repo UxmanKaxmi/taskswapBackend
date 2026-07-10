@@ -1,4 +1,4 @@
-import { createMotivationMilestoneNotification, createMotivationPushNotification } from "../notification/notification.service";
+import { createMotivationMilestoneNotification, createMotivationPushNotification, sendMotivationPushSilentNotification } from "../notification/notification.service";
 import { prisma } from "../../db/client";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../../errors/AppError";
@@ -104,6 +104,17 @@ export async function togglePushForTask({
     taskId,
     taskOwnerId: task.userId,
     pushedByUserId: userId,
+  });
+
+  // Live "X pushed you" pill for the owner. Fire-and-forget: a failed silent
+  // push must never fail the push request itself.
+  void sendMotivationPushSilentNotification({
+    taskId,
+    taskOwnerId: task.userId,
+    pushedByUserId: userId,
+    pushCount,
+  }).catch((error) => {
+    console.error("Failed to send push-received silent notification:", error);
   });
 
   await createMotivationMilestoneNotification({

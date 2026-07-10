@@ -1,6 +1,6 @@
 import { NOTIFICATION_TYPES } from "../../types/notificationTypes";
 import { prisma } from "../../db/client";
-import { sendPushNotification } from "../../utils/sendPushNotification";
+import { sendPushNotification, sendSilentPushNotification } from "../../utils/sendPushNotification";
 import { schedulePush } from "../../utils/scheduleReminderPush";
 import {
   DEFAULT_TEST_NOTIFICATION_TEXT,
@@ -393,6 +393,58 @@ export async function createMotivationPushNotification({
         taskText: task.text,
       },
     },
+  });
+}
+
+// Low-level "separate API" for silent (data-only) pushes: look up the user's
+// device token and deliver a data payload with no visible banner. Returns
+// false (never throws) when the user has no token, so callers in a request
+// path can fire-and-forget without risking the response.
+export async function sendSilentNotificationToUser(
+  userId: string,
+  data: Record<string, string>
+): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fcmToken: true },
+  });
+
+  if (!user?.fcmToken) return false;
+
+  return sendSilentPushNotification(user.fcmToken, data);
+}
+
+// Live "X pushed you" pill: a silent push to the goal owner on every push.
+// Unlike the milestone FCM, this fires on each push and carries the pusher's
+// name so the client can render it without a follow-up fetch.
+export async function sendMotivationPushSilentNotification({
+  taskId,
+  taskOwnerId,
+  pushedByUserId,
+  pushCount,
+}: {
+  taskId: string;
+  taskOwnerId: string;
+  pushedByUserId: string;
+  pushCount: number;
+}): Promise<boolean> {
+  if (taskOwnerId === pushedByUserId) return false;
+
+  const [task, pusher] = await Promise.all([
+    prisma.task.findUnique({ where: { id: taskId }, select: { type: true } }),
+    prisma.user.findUnique({ where: { id: pushedByUserId }, select: { name: true } }),
+  ]);
+
+  if (!task) return false;
+
+  return sendSilentNotificationToUser(taskOwnerId, {
+    notificationType: NOTIFICATION_TYPES.TASK_MOTIVATION_PUSH,
+    taskId,
+    taskType: task.type,
+    pusherName: pusher?.name?.trim() || "Someone",
+    pushCount: String(pushCount),
+    deeplinkPath: `/tasks/${taskId}`,
+    screen: "TaskDetail",
   });
 }
 
