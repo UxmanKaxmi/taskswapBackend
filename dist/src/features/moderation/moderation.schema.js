@@ -24,6 +24,8 @@ const REPORT_REASON_BY_KEY = {
     hate: "Hate or abusive content",
     abuse: "Hate or abusive content",
     abusive: "Hate or abusive content",
+    hate_abuse: "Hate or abusive content",
+    hate_or_abuse: "Hate or abusive content",
     hate_abusive_content: "Hate or abusive content",
     hate_or_abusive_content: "Hate or abusive content",
     sexual: "Sexual content",
