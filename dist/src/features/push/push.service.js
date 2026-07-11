@@ -80,10 +80,21 @@ async function togglePushForTask({ userId, taskId, }) {
         taskOwnerId: task.userId,
         pushedByUserId: userId,
     });
+    // Live "X pushed you" pill for the owner. Fire-and-forget: a failed silent
+    // push must never fail the push request itself.
+    void (0, notification_service_1.sendMotivationPushSilentNotification)({
+        taskId,
+        taskOwnerId: task.userId,
+        pushedByUserId: userId,
+        pushCount,
+    }).catch((error) => {
+        console.error("Failed to send push-received silent notification:", error);
+    });
     await (0, notification_service_1.createMotivationMilestoneNotification)({
         taskId,
         taskOwnerId: task.userId,
         pushCount,
+        triggeredByUserId: userId,
     });
     return {
         hasPushed: true,

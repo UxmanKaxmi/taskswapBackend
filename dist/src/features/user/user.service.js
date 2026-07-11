@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncUserToDB = syncUserToDB;
+exports.updateFcmToken = updateFcmToken;
 exports.deleteMyAccount = deleteMyAccount;
 exports.getMutualFriends = getMutualFriends;
 exports.matchUsersByEmail = matchUsersByEmail;
@@ -20,6 +21,7 @@ const AppError_1 = require("../../errors/AppError");
 const httpStatus_1 = require("../../types/httpStatus");
 const task_service_1 = require("../task/task.service");
 const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
+const sendPushNotification_1 = require("../../utils/sendPushNotification");
 const seededUser_service_1 = require("../seededUser/seededUser.service");
 const appleAuth_service_1 = require("./appleAuth.service");
 const moderation_service_1 = require("../moderation/moderation.service");
@@ -102,6 +104,15 @@ async function syncUserToDB({ id, email, name, photo, fcmToken, provider, provid
             });
         }
         return user;
+    });
+}
+// Lightweight token refresh used by the app whenever FCM rotates the token.
+// Authenticated with the backend JWT, so it works for every auth provider.
+async function updateFcmToken(userId, fcmToken) {
+    return client_1.prisma.user.update({
+        where: { id: userId },
+        data: { fcmToken },
+        select: { id: true },
     });
 }
 async function findExistingUserForVerifiedIdentity({ id, email, provider, providerUserId, }) {
@@ -353,6 +364,17 @@ async function toggleFollowUser(followerId, followingId) {
                 },
             },
         });
+        const followedUser = await client_1.prisma.user.findUnique({
+            where: { id: followingId },
+            select: { fcmToken: true },
+        });
+        if (followedUser?.fcmToken) {
+            const { title, body } = (0, notificationTextCatalog_1.getFollowPushText)(follower?.name ?? "Someone");
+            await (0, sendPushNotification_1.sendPushNotification)(followedUser.fcmToken, title, body, {
+                notificationType: "follow",
+                screen: "NotificationMainScreen",
+            });
+        }
         return { success: true, action: "followed" };
     }
     catch (err) {
@@ -575,12 +597,14 @@ async function getHomeSummaryForUser(userId, utcOffsetMinutes = 0) {
             select: { userId: true },
         }),
         // Most recent completed motivation task the current user pushed → success story.
+        // Anonymous goals are excluded: the card names its owner by design.
         client_1.prisma.task.findFirst({
             where: {
                 completed: true,
                 completedAt: { not: null },
                 userId: { in: followingIds },
                 type: "motivation",
+                isAnonymous: false,
                 Push: { some: { userId } },
             },
             orderBy: { completedAt: "desc" },

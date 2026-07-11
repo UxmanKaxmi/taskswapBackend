@@ -10,4 +10,5 @@ const router = express_1.default.Router();
 router.get("/", requireAuth_1.requireAuth, notification_controller_1.handleGetNotifications);
 router.patch("/:id/read", requireAuth_1.requireAuth, notification_controller_1.handleMarkNotificationAsRead);
 router.post("/mark-many-read", requireAuth_1.requireAuth, notification_controller_1.handleBatchMarkNotificationsAsRead);
+router.post("/silent", requireAuth_1.requireAuth, notification_controller_1.handleSendSilentNotification);
 exports.default = router;

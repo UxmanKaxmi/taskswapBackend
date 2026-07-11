@@ -6,6 +6,7 @@ exports.handleGetTasks = handleGetTasks;
 exports.handleGetTaskById = handleGetTaskById;
 exports.handleDeleteTask = handleDeleteTask;
 exports.handleMarkTaskAsDone = handleMarkTaskAsDone;
+exports.handleRevealTask = handleRevealTask;
 exports.handleMarkTaskNotDone = handleMarkTaskNotDone;
 exports.handleShareTaskProgress = handleShareTaskProgress;
 exports.handleGetTaskViewCount = handleGetTaskViewCount;
@@ -184,6 +185,27 @@ async function handleMarkTaskAsDone(req, res, next) {
     }
     catch (error) {
         console.error("[TASK_COMPLETE_ERROR]", error);
+        next(error);
+    }
+}
+/* -------------------------------------------------------
+   REVEAL ANONYMOUS TASK (AUTH REQUIRED, one-way)
+---------------------------------------------------------*/
+async function handleRevealTask(req, res, next) {
+    const taskId = (0, params_1.getParamString)(req.params.id);
+    const userId = req.user?.id;
+    if (!userId) {
+        return next(new errors_1.BadRequestError("User ID is required"));
+    }
+    if (!taskId) {
+        return next(new errors_1.BadRequestError("Task ID is required"));
+    }
+    try {
+        const revealed = await (0, task_service_1.revealTask)(taskId, userId);
+        res.status(200).json(revealed);
+    }
+    catch (error) {
+        console.error("[TASK_REVEAL_ERROR]", error);
         next(error);
     }
 }

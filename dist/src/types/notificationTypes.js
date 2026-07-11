@@ -18,6 +18,7 @@ exports.NOTIFICATION_TYPES = {
     TASK_CHEER: "task-cheer",
     TASK_MOTIVATION_MILESTONE: "task-motivation-milestone",
     TASK_MOTIVATION_MILESTONE_SENT: "task-motivation-milestone-sent",
+    TASK_PUSHED_TASK_MILESTONE: "task-pushed-task-milestone",
     TASK_MOTIVATION_UNFINISHED_REMINDER: "task-motivation-unfinished-reminder",
     TASK_MOTIVATION_HELP_PUSH_REMINDER: "task-motivation-help-push-reminder"
 };

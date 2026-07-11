@@ -11,13 +11,16 @@ exports.sendTestDecisionDoneNotification = sendTestDecisionDoneNotification;
 exports.createTaskAdviceNotification = createTaskAdviceNotification;
 exports.createCommentMentionNotifications = createCommentMentionNotifications;
 exports.createMotivationPushNotification = createMotivationPushNotification;
+exports.sendSilentNotificationToUser = sendSilentNotificationToUser;
+exports.sendMotivationPushSilentNotification = sendMotivationPushSilentNotification;
 exports.createMotivationMilestoneNotification = createMotivationMilestoneNotification;
 const notificationTypes_1 = require("../../types/notificationTypes");
 const client_1 = require("../../db/client");
 const sendPushNotification_1 = require("../../utils/sendPushNotification");
 const scheduleReminderPush_1 = require("../../utils/scheduleReminderPush");
 const notificationTextCatalog_1 = require("../../utils/notificationTextCatalog");
-const MOTIVATION_PUSH_MILESTONES = [10, 100, 500, 1000];
+const seededUser_service_1 = require("../seededUser/seededUser.service");
+const MOTIVATION_PUSH_MILESTONES = [5, 10, 20, 50, 100];
 // 📨 Get notifications for the logged-in user
 async function getUserNotifications(userId) {
     return client_1.prisma.notification.findMany({
@@ -204,11 +207,11 @@ async function createTaskAdviceNotification(tx, { taskId, senderId, commentText,
         },
     });
     if (!task)
-        return;
+        return null;
     if (task.type !== "advice")
-        return;
+        return null;
     if (task.userId === senderId)
-        return;
+        return null;
     await tx.notification.create({
         data: {
             userId: task.userId,
@@ -223,6 +226,8 @@ async function createTaskAdviceNotification(tx, { taskId, senderId, commentText,
             },
         },
     });
+    // Returned so the caller can send the FCM push after the transaction commits.
+    return { ownerId: task.userId, taskText: task.text };
 }
 // 💬 Mention notifications
 async function createCommentMentionNotifications(tx, { mentionedIds, senderId, taskId, commentId, commentText, }) {
@@ -272,7 +277,42 @@ async function createMotivationPushNotification({ taskId, taskOwnerId, pushedByU
         },
     });
 }
-async function createMotivationMilestoneNotification({ taskId, taskOwnerId, pushCount, }) {
+// Low-level "separate API" for silent (data-only) pushes: look up the user's
+// device token and deliver a data payload with no visible banner. Returns
+// false (never throws) when the user has no token, so callers in a request
+// path can fire-and-forget without risking the response.
+async function sendSilentNotificationToUser(userId, data) {
+    const user = await client_1.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fcmToken: true },
+    });
+    if (!user?.fcmToken)
+        return false;
+    return (0, sendPushNotification_1.sendSilentPushNotification)(user.fcmToken, data);
+}
+// Live "X pushed you" pill: a silent push to the goal owner on every push.
+// Unlike the milestone FCM, this fires on each push and carries the pusher's
+// name so the client can render it without a follow-up fetch.
+async function sendMotivationPushSilentNotification({ taskId, taskOwnerId, pushedByUserId, pushCount, }) {
+    if (taskOwnerId === pushedByUserId)
+        return false;
+    const [task, pusher] = await Promise.all([
+        client_1.prisma.task.findUnique({ where: { id: taskId }, select: { type: true } }),
+        client_1.prisma.user.findUnique({ where: { id: pushedByUserId }, select: { name: true } }),
+    ]);
+    if (!task)
+        return false;
+    return sendSilentNotificationToUser(taskOwnerId, {
+        notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_MOTIVATION_PUSH,
+        taskId,
+        taskType: task.type,
+        pusherName: pusher?.name?.trim() || "Someone",
+        pushCount: String(pushCount),
+        deeplinkPath: `/tasks/${taskId}`,
+        screen: "TaskDetail",
+    });
+}
+async function createMotivationMilestoneNotification({ taskId, taskOwnerId, pushCount, triggeredByUserId, }) {
     if (!MOTIVATION_PUSH_MILESTONES.includes(pushCount))
         return;
     const task = await client_1.prisma.task.findUnique({
@@ -320,6 +360,16 @@ async function createMotivationMilestoneNotification({ taskId, taskOwnerId, push
             screen: "TaskDetail",
         });
     }
+    // 📣 Tell earlier pushers their push is paying off. The pusher who just
+    // triggered the milestone is excluded — they saw the count when they tapped.
+    await notifyPushersOfMilestone({
+        taskId,
+        taskOwnerId,
+        taskType: task.type,
+        taskText: task.text,
+        pushCount,
+        triggeredByUserId,
+    });
     // 🧠 Save internal marker so we don’t resend
     await client_1.prisma.notification.create({
         data: {
@@ -334,4 +384,44 @@ async function createMotivationMilestoneNotification({ taskId, taskOwnerId, push
             },
         },
     });
+}
+async function notifyPushersOfMilestone({ taskId, taskOwnerId, taskType, taskText, pushCount, triggeredByUserId, }) {
+    const excludedIds = [taskOwnerId];
+    if (triggeredByUserId)
+        excludedIds.push(triggeredByUserId);
+    const supporters = await client_1.prisma.user.findMany({
+        where: {
+            origin: seededUser_service_1.USER_ORIGIN.REAL,
+            id: { notIn: excludedIds },
+            Push: { some: { taskId } },
+        },
+        select: { id: true, fcmToken: true },
+    });
+    if (!supporters.length)
+        return;
+    await client_1.prisma.notification.createMany({
+        data: supporters.map((supporter) => ({
+            userId: supporter.id,
+            senderId: null,
+            type: notificationTypes_1.NOTIFICATION_TYPES.TASK_PUSHED_TASK_MILESTONE,
+            taskType,
+            message: (0, notificationTextCatalog_1.getPushedTaskMilestoneNotificationMessage)(pushCount, taskText),
+            metadata: {
+                taskId,
+                taskText,
+                pushCount,
+            },
+        })),
+    });
+    const { title, body } = (0, notificationTextCatalog_1.getPushedTaskMilestoneNotificationText)(pushCount);
+    await Promise.all(supporters.map((supporter) => supporter.fcmToken
+        ? (0, sendPushNotification_1.sendPushNotification)(supporter.fcmToken, title, body, {
+            notificationType: notificationTypes_1.NOTIFICATION_TYPES.TASK_PUSHED_TASK_MILESTONE,
+            taskId,
+            taskType,
+            pushCount: String(pushCount),
+            deeplinkPath: `/tasks/${taskId}`,
+            screen: "TaskDetail",
+        })
+        : undefined));
 }

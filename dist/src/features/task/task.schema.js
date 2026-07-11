@@ -19,6 +19,7 @@ exports.baseTaskSchema = zod_1.z.object({
     type: zod_1.z.enum(["reminder", "decision", "motivation", "advice"]),
     avatar: zod_1.z.string().optional(),
     feeling: feelingSchema,
+    isAnonymous: zod_1.z.boolean().optional(),
 });
 exports.reminderTaskSchema = exports.baseTaskSchema.extend({
     type: zod_1.z.literal("reminder"),
@@ -65,6 +66,9 @@ const baseUpdateSchema = zod_1.z.object({
     avatar: zod_1.z.string().optional(),
     name: zod_1.z.string().optional(),
     feeling: feelingSchema,
+    // Passed through so updateTask can reject anonymity changes with a clear
+    // error instead of silently stripping them.
+    isAnonymous: zod_1.z.boolean().optional(),
 });
 const reminderUpdateSchema = baseUpdateSchema.extend({
     type: zod_1.z.literal("reminder").optional(),

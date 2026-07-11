@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleSyncUser = handleSyncUser;
+exports.handleUpdateFcmToken = handleUpdateFcmToken;
 exports.handleMatchUsers = handleMatchUsers;
 exports.handleToggleFollowUser = handleToggleFollowUser;
 exports.handleGetFollowers = handleGetFollowers;
@@ -47,6 +48,24 @@ async function handleSyncUser(req, res, next) {
         if (error instanceof AppError_1.AppError)
             return next(error);
         next(new AppError_1.AppError("Failed to sync user", 500));
+    }
+}
+async function handleUpdateFcmToken(req, res, next) {
+    const userId = req.user?.id;
+    const { fcmToken } = req.body ?? {};
+    if (!userId) {
+        return next(new AppError_1.AppError("Unauthorized", 401));
+    }
+    if (typeof fcmToken !== "string" || !fcmToken.trim()) {
+        return next(new errors_1.BadRequestError("`fcmToken` is required"));
+    }
+    try {
+        await (0, user_service_1.updateFcmToken)(userId, fcmToken.trim());
+        res.status(200).json({ success: true });
+    }
+    catch (error) {
+        console.error("[FCM_TOKEN_UPDATE_ERROR]", error);
+        next(new AppError_1.AppError("Failed to update FCM token", 500));
     }
 }
 async function handleMatchUsers(req, res, next) {

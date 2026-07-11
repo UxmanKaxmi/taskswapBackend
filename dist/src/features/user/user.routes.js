@@ -18,6 +18,9 @@ router.get("/toggleFollow/:userId", requireAuth_1.requireAuth, user_controller_1
 router.get("/followers", optionalAuth_1.optionalAuth, user_controller_1.handleGetFollowers);
 router.get("/following", optionalAuth_1.optionalAuth, user_controller_1.handleGetFollowing);
 router.get("/me", requireAuth_1.requireAuth, user_controller_1.handleGetMe);
+// FCM token refresh — works for any auth provider (Google, Apple) since it
+// uses the backend JWT instead of a provider identity token
+router.patch("/me/fcm-token", requireAuth_1.requireAuth, user_controller_1.handleUpdateFcmToken);
 // Account deletion (Apple 5.1.1(v)) — identity comes from the token, not params
 router.delete("/me", requireJwtAuth_1.requireJwtAuth, user_controller_1.handleDeleteMe);
 // Home dashboard summary for the logged-in user

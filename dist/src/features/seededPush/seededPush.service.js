@@ -197,6 +197,7 @@ async function createSeededPushForTaskUser({ taskId, pusherId, maxSeededPushes, 
             taskId,
             taskOwnerId: task.userId,
             pushCount,
+            triggeredByUserId: pusherId,
         });
         return true;
     }

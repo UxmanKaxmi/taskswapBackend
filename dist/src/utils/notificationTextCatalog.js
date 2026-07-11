@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_TEST_NOTIFICATION_TEXT = void 0;
 exports.getTestNotificationText = getTestNotificationText;
 exports.getMotivationMilestoneNotificationText = getMotivationMilestoneNotificationText;
+exports.getPushedTaskMilestoneNotificationText = getPushedTaskMilestoneNotificationText;
+exports.getPushedTaskMilestoneNotificationMessage = getPushedTaskMilestoneNotificationMessage;
 exports.getMotivationPushNotificationText = getMotivationPushNotificationText;
 exports.getProgressUpdateNotificationText = getProgressUpdateNotificationText;
 exports.getTaskReminderPushNotificationText = getTaskReminderPushNotificationText;
@@ -23,6 +25,8 @@ exports.getTaskCheerPushText = getTaskCheerPushText;
 exports.getNotificationMarkerMessage = getNotificationMarkerMessage;
 exports.getReminderReceivedNotificationMessage = getReminderReceivedNotificationMessage;
 exports.getFollowNotificationMessage = getFollowNotificationMessage;
+exports.getFollowPushText = getFollowPushText;
+exports.getTaskAdvicePushText = getTaskAdvicePushText;
 exports.getReferralShareText = getReferralShareText;
 exports.getReferralInviteText = getReferralInviteText;
 exports.DEFAULT_TEST_NOTIFICATION_TEXT = {
@@ -37,6 +41,17 @@ function getMotivationMilestoneNotificationText(pushCount) {
         title: "🔥 Momentum milestone!",
         body: `Your task just passed ${pushCount} pushes. Keep it going.`,
     };
+}
+// Sent to earlier pushers when a goal they pushed crosses a push milestone.
+function getPushedTaskMilestoneNotificationText(pushCount) {
+    return {
+        title: "🔥 Your push is paying off",
+        body: `${pushCount} people have now pushed the goal you pushed.`,
+    };
+}
+// Inbox message for the same event — includes the goal text for context.
+function getPushedTaskMilestoneNotificationMessage(pushCount, taskText) {
+    return `${pushCount} people have now pushed "${taskText}"`;
 }
 function getMotivationPushNotificationText(taskText) {
     return {
@@ -148,6 +163,18 @@ function getReminderReceivedNotificationMessage(senderName) {
 }
 function getFollowNotificationMessage(followerName) {
     return `${followerName} followed you`;
+}
+function getFollowPushText(followerName) {
+    return {
+        title: "🎉 New follower",
+        body: `${followerName} started following you`,
+    };
+}
+function getTaskAdvicePushText(taskText) {
+    return {
+        title: "💡 New advice on your goal",
+        body: `Someone shared advice on "${taskText}"`,
+    };
 }
 function getReferralShareText() {
     return {
