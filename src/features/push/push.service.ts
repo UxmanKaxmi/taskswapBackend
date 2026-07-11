@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { AppError } from "../../errors/AppError";
 import { HttpStatus } from "../../types/httpStatus";
 import { isTaskHiddenForViewer } from "../moderation/moderation.service";
+import { completeFirstTimeHint } from "../hints/hints.service";
 
 type TogglePushInput = {
   userId: string;
@@ -99,6 +100,10 @@ export async function togglePushForTask({
 
     throw error;
   }
+
+  // Only the create path lands here, so this is the pusher's first-ever push
+  // or a no-op; the early "already pushed" returns above never reach it.
+  await completeFirstTimeHint(userId, "first_push_given");
 
   await createMotivationPushNotification({
     taskId,

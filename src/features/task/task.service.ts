@@ -25,6 +25,7 @@ import {
   createTaskProgressUpdateNotifications,
 } from "../notification/notification.service";
 import { scheduleSeededPushesForTask } from "../seededPush/seededPush.service";
+import { completeFirstTimeHint } from "../hints/hints.service";
 import {
   cancelScheduledPushesForTask,
   createScheduledPush,
@@ -537,6 +538,8 @@ const options =
     }
     throw error;
   }
+
+  await completeFirstTimeHint(userId, "first_goal_posted");
 
   /* ---------------------------
      Schedule reminder push
@@ -1236,6 +1239,8 @@ export async function shareTaskProgress(
 
     return update;
   });
+
+  await completeFirstTimeHint(senderId, "first_response");
 
   await createTaskProgressUpdateNotifications({
     recipientIds,

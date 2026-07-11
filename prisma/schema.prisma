@@ -60,6 +60,7 @@ model User {
   providerUserId             String?
   appleRefreshToken          String?
   appleRefreshTokenUpdatedAt DateTime?
+  firstTimeHints             Json             @default("{}")
   Comment                    Comment[]
   cheers                     Cheer[]
   CommentLike                CommentLike[]

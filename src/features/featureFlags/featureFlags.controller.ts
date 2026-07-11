@@ -6,6 +6,7 @@ import {
   FeatureFlagsUpdateBody,
   isFeatureFlagKey,
 } from "./featureFlags.types";
+import { getGlobalFeatureFlags } from "./globalFlags";
 
 export const handleGetFeatureFlags: RequestHandler = async (
   req,
@@ -15,12 +16,16 @@ export const handleGetFeatureFlags: RequestHandler = async (
   try {
     const userId = req.user?.id;
     if (!userId) {
-      res.status(200).json({ features: DEFAULT_FEATURE_FLAGS });
+      res.status(200).json({
+        features: { ...DEFAULT_FEATURE_FLAGS, ...getGlobalFeatureFlags() },
+      });
       return;
     }
 
     const data = await svc.getFeatureFlagsForUser(userId);
-    res.status(200).json(data);
+    res.status(200).json({
+      features: { ...data.features, ...getGlobalFeatureFlags() },
+    });
   } catch (err) {
     next(err);
   }
@@ -70,7 +75,9 @@ export const handleUpdateFeatureFlags: RequestHandler = async (
     }
 
     const data = await svc.updateFeatureFlagsForUser(userId, updates);
-    res.status(200).json(data);
+    res.status(200).json({
+      features: { ...data.features, ...getGlobalFeatureFlags() },
+    });
   } catch (err) {
     next(err);
   }

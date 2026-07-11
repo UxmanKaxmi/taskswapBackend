@@ -551,6 +551,9 @@ export async function getUserById(userId: string) {
       username: true,
       photo: true,
       createdAt: true,
+      // Delivered in GET /users/me so first-time hints hydrate on session
+      // start (reinstalls / second devices).
+      firstTimeHints: true,
     },
   });
 }
@@ -564,6 +567,12 @@ export async function getFollowersCount(userId: string) {
 export async function getFollowingCount(userId: string) {
   return prisma.follow.count({
     where: { followerId: userId },
+  });
+}
+
+export async function getPushesGivenCount(userId: string) {
+  return prisma.push.count({
+    where: { userId },
   });
 }
 
@@ -938,12 +947,14 @@ export async function getUserProfileById(
     taskStats,
     recentTasks,
     mutualFriends,
+    pushesGiven,
   ] = await Promise.all([
     getFollowersCount(targetUserId),
     getFollowingCount(targetUserId),
     getTaskStatsForUser(targetUserId),
     getRecentTasksForUserProfile(targetUserId, currentUserId, 5),
     currentUserId ? getMutualFriends(currentUserId, targetUserId) : [],
+    getPushesGivenCount(targetUserId),
   ]);
 
   let isFollowing = false;
@@ -985,6 +996,7 @@ export async function getUserProfileById(
     isFollowedBy,
     recentTasks,
     mutualFriends,
+    pushesGiven,
     taskSuccessRate: taskStats.successRate,
     tasksDone: taskStats.tasksDone,
     dayStreak: taskStats.dayStreak,

@@ -8,6 +8,7 @@ import { getTaskCheerPushText } from "../../utils/notificationTextCatalog";
 import { getActiveCheerPreset } from "./cheer.presets";
 import { AvatarUser, BeatCheerState, TaskCheerSummary } from "./cheer.types";
 import { isTaskHiddenForViewer } from "../moderation/moderation.service";
+import { completeFirstTimeHint } from "../hints/hints.service";
 
 const CHEER_SAMPLE_SIZE = 3;
 const CHEER_NOTIFICATION_GROUP_MS = 30 * 60 * 1000;
@@ -458,6 +459,8 @@ export async function cheerBeat({
           result.pushNotification.data
         );
       }
+
+      await completeFirstTimeHint(userId, "cheer_discovery");
 
       return result.response;
     } catch (error) {

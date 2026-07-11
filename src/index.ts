@@ -12,6 +12,7 @@ import commentRoutes from "./features/comment/comment.routes";
 import referralRoutes from "./features/referral/referral.routes";
 import pushRoutes from "./features/push/push.routes";
 import featureFlagsRoutes from "./features/featureFlags/featureFlags.routes";
+import firstTimeHintRoutes from "./features/hints/hints.routes";
 import { startNotificationReminderSweep } from "./features/notification/notificationReminderSweep.service";
 import { startScheduledPushDispatcher } from "./features/notification/scheduledPush.service";
 import feedbackRoutes from "./features/feedback/feedback.routes";
@@ -137,6 +138,7 @@ if (process.env.NODE_ENV === "development") {
 app.use("/tasks", writeLimiter, taskModerationRoutes as Router);
 app.use("/tasks", writeLimiter, taskRoutes as Router);
 app.use("/users", writeLimiter, userModerationRoutes as Router);
+app.use("/users/me/hints", writeLimiter, firstTimeHintRoutes as Router);
 app.use("/users", userRoutes);
 app.use("/reminderNote", reminderNote as Router);
 app.use("/notification", notificationRoutes as Router);

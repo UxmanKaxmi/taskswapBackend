@@ -20,6 +20,7 @@ import { getParamString } from "../../utils/params";
 import {
   getFollowersCount,
   getFollowingCount,
+  getPushesGivenCount,
   getTaskStatsForUser,
   getHomeSummaryForUser,
   getImpactForUser,
@@ -240,18 +241,22 @@ export async function handleGetMe(
     const user = await getUserById(userId);
     if (!user) return next(new AppError("User not found", 404));
 
-    const [followersCount, followingCount, taskStats] = await Promise.all([
-      getFollowersCount(userId),
-      getFollowingCount(userId),
-      getTaskStatsForUser(userId),
-    ]);
+    const [followersCount, followingCount, taskStats, pushesGiven] =
+      await Promise.all([
+        getFollowersCount(userId),
+        getFollowingCount(userId),
+        getTaskStatsForUser(userId),
+        getPushesGivenCount(userId),
+      ]);
 
     res.status(200).json({
       ...user,
       followersCount,
       followingCount,
+      pushesGiven,
       taskSuccessRate: taskStats.successRate,
       tasksDone: taskStats.tasksDone,
+      dayStreak: taskStats.dayStreak,
     });
   } catch (err) {
     next(new AppError("Failed to fetch user profile", 500));
