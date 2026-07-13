@@ -38,6 +38,14 @@ import {
   getBlockedUserIdsForViewer,
   isTaskHiddenForViewer,
 } from "../moderation/moderation.service";
+import {
+  getCircleFeedCards,
+  handleCircleTaskCompleted,
+  handleCircleTaskDeleted,
+  handleCircleTaskUncompleted,
+  notifyCircleOfProgressUpdate,
+  type CircleFeedCard,
+} from "../circle/circle.service";
 
 type FeedTask = {
   id: string;
@@ -81,8 +89,13 @@ type TaskProgressUpdateSummary = {
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 const PROGRESS_UPDATE_COOLDOWN_MS =
   process.env.NODE_ENV === "production" ? 6 * HOUR_MS : MINUTE_MS;
+// Circle updates are a shared surface — one update a day keeps the circle's
+// activity meaningful instead of chatty.
+const CIRCLE_PROGRESS_UPDATE_COOLDOWN_MS =
+  process.env.NODE_ENV === "production" ? DAY_MS : MINUTE_MS;
 
 type TaskPushHistoryItem = {
   createdAt: Date;
@@ -127,11 +140,21 @@ function toProgressUpdateSummary(
   };
 }
 
-function getProgressUpdateCooldownMessage(remainingMs: number) {
-  if (PROGRESS_UPDATE_COOLDOWN_MS < HOUR_MS) {
+function getProgressUpdateCooldownMessage(
+  remainingMs: number,
+  cooldownMs: number = PROGRESS_UPDATE_COOLDOWN_MS
+) {
+  if (cooldownMs < HOUR_MS) {
     const remainingMinutes = Math.ceil(remainingMs / MINUTE_MS);
     return `You can only share a progress update every 1 minute. Try again in about ${remainingMinutes} minute${
       remainingMinutes === 1 ? "" : "s"
+    }.`;
+  }
+
+  if (cooldownMs >= DAY_MS) {
+    const remainingHours = Math.ceil(remainingMs / HOUR_MS);
+    return `You can share one update a day. Try again in about ${remainingHours} hour${
+      remainingHours === 1 ? "" : "s"
     }.`;
   }
 
@@ -144,10 +167,13 @@ function getProgressUpdateCooldownMessage(remainingMs: number) {
 
 
 async function checkDuplicateTask(text: string, userId: string, excludeId?: string) {
+  // Circle tasks are exempt from text uniqueness (every member carries the
+  // shared sentence), mirroring the partial unique index.
   return prisma.task.findFirst({
     where: {
       text,
       userId,
+      circleId: null,
       NOT: excludeId ? { id: excludeId } : undefined,
     },
   });
@@ -275,6 +301,7 @@ type PaginatedTaskResult = {
   tasks: TaskFeedResponse;
   nextCursor: string | null;
   hasMore: boolean;
+  circles?: CircleFeedCard[];
 };
 
 const FEED_SORTS = new Set<FeedSort>(["all", "needs_push", "new", "almost_there"]);
@@ -366,6 +393,7 @@ async function getFeedCursorRow(
       AND t.type = 'motivation'
       AND t.completed = false
       AND t."completedAt" IS NULL
+      AND t."circleId" IS NULL
       ${excludeSelfCondition}
       ${blockedUsersCondition}
     LIMIT 1
@@ -400,6 +428,8 @@ async function getOrderedFeedTaskIds({
   const cursorCondition = getFeedCursorCondition(sort, cursor);
   const orderBy = getFeedOrderBy(sort);
 
+  // Circle member tasks never appear as individual feed cards — the feed
+  // renders ONE circle card per circle instead (see getCircleFeedCards).
   return prisma.$queryRaw<{ id: string }[]>`
     SELECT t.id
     FROM "Task" t
@@ -408,6 +438,7 @@ async function getOrderedFeedTaskIds({
       AND t.type = 'motivation'
       AND t.completed = false
       AND t."completedAt" IS NULL
+      AND t."circleId" IS NULL
       ${almostThereCondition}
       ${excludeSelfCondition}
       ${blockedUsersCondition}
@@ -927,6 +958,13 @@ export async function getAllTasks(
     blockedUserIds,
   });
 
+  // Circle cards ride the first page only — they are few (max 3 active per
+  // user) and ranked among themselves, so they don't join the task keyset.
+  const circles =
+    helpers?.includeCircles && !cursorId
+      ? await getCircleFeedCards(userId ?? null, blockedUserIds)
+      : undefined;
+
   const hasMore = orderedIds.length === fetchLimit;
   const trimmedIds = hasMore ? orderedIds.slice(0, normalizedLimit) : orderedIds;
   const taskIds = trimmedIds.map((row) => row.id);
@@ -937,6 +975,7 @@ export async function getAllTasks(
       tasks: [],
       hasMore: false,
       nextCursor: null,
+      ...(circles ? { circles } : {}),
     };
   }
 
@@ -972,6 +1011,7 @@ export async function getAllTasks(
     tasks: paginatedTasks,
     hasMore,
     nextCursor: hasMore ? lastTaskId : null,
+    ...(circles ? { circles } : {}),
   };
 }
 
@@ -1055,7 +1095,14 @@ export async function deleteTask(id: string, userId: string) {
   await prisma.vote.deleteMany({ where: { taskId: id } });
   await cancelScheduledPushesForTask(id);
 
-  return prisma.task.delete({ where: { id } });
+  const deleted = await prisma.task.delete({ where: { id } });
+
+  // Deleting a circle task is a silent leave; the circle may dissolve.
+  if (existing.circleId) {
+    await handleCircleTaskDeleted(existing.circleId, userId);
+  }
+
+  return deleted;
 }
 
 /* -------------------------------------------------------
@@ -1109,10 +1156,16 @@ export async function markTaskAsDone(taskId: string, userId: string) {
     });
   }
 
-  return prisma.task.update({
+  const updated = await prisma.task.update({
     where: { id: taskId },
     data: { completed: true, completedAt: new Date() },
   });
+
+  if (updated.circleId) {
+    await handleCircleTaskCompleted(updated.circleId, userId, updated.id);
+  }
+
+  return updated;
 }
 
 export async function markTaskAsNotDone(taskId: string, userId: string) {
@@ -1122,10 +1175,16 @@ export async function markTaskAsNotDone(taskId: string, userId: string) {
   if (task.userId !== userId)
     throw new AppError("Unauthorized", HttpStatus.UNAUTHORIZED);
 
-  return prisma.task.update({
+  const updated = await prisma.task.update({
     where: { id: taskId },
     data: { completed: false, completedAt: null },
   });
+
+  if (updated.circleId) {
+    await handleCircleTaskUncompleted(updated.circleId, userId);
+  }
+
+  return updated;
 }
 
 export async function shareTaskProgress(
@@ -1146,6 +1205,7 @@ export async function shareTaskProgress(
       isAnonymous: true,
       anonAlias: true,
       completed: true,
+      circleId: true,
       Push: {
         select: { userId: true },
       },
@@ -1187,14 +1247,17 @@ export async function shareTaskProgress(
     );
   }
 
+  const cooldownMs = task.circleId
+    ? CIRCLE_PROGRESS_UPDATE_COOLDOWN_MS
+    : PROGRESS_UPDATE_COOLDOWN_MS;
   const latestProgressUpdate = task.progressUpdates[0];
   if (latestProgressUpdate) {
     const elapsedMs = Date.now() - latestProgressUpdate.createdAt.getTime();
-    if (elapsedMs < PROGRESS_UPDATE_COOLDOWN_MS) {
-      const remainingMs = PROGRESS_UPDATE_COOLDOWN_MS - elapsedMs;
+    if (elapsedMs < cooldownMs) {
+      const remainingMs = cooldownMs - elapsedMs;
       const nextAllowedAt = new Date(Date.now() + remainingMs).toISOString();
       throw new AppError(
-        getProgressUpdateCooldownMessage(remainingMs),
+        getProgressUpdateCooldownMessage(remainingMs, cooldownMs),
         HttpStatus.TOO_MANY_REQUESTS,
         true,
         { nextAllowedAt, remainingMs }
@@ -1252,6 +1315,16 @@ export async function shareTaskProgress(
     taskType: task.type,
     senderName,
   });
+
+  if (task.circleId) {
+    await notifyCircleOfProgressUpdate({
+      circleId: task.circleId,
+      senderId,
+      senderName,
+      progressText: text,
+      alreadyNotifiedUserIds: recipientIds,
+    });
+  }
 
   return toProgressUpdateSummary(progressUpdate)!;
 }

@@ -14,6 +14,7 @@ export interface GlobalFeatureFlagsDTO {
   hintFirstPushGiven: boolean;
   hintCheerDiscovery: boolean;
   hintFirstResponse: boolean;
+  circles: boolean;
 }
 
 // The master flag ships dark (default false) and is turned on via env.
@@ -26,5 +27,6 @@ export function getGlobalFeatureFlags(): GlobalFeatureFlagsDTO {
     hintFirstPushGiven: envFlag("FLAG_HINT_FIRST_PUSH_GIVEN", true),
     hintCheerDiscovery: envFlag("FLAG_HINT_CHEER_DISCOVERY", true),
     hintFirstResponse: envFlag("FLAG_HINT_FIRST_RESPONSE", true),
+    circles: envFlag("FLAG_CIRCLES", false),
   };
 }

@@ -202,3 +202,83 @@ export function getReferralInviteText() {
     body: "Join me on PushMeUp. Post a goal and get real pushes from people who want you to win.",
   };
 }
+
+// --- Circles: members hear about each other's positive events only ---
+// Inbox messages deliberately omit the actor's name: the notification row
+// renders the bold sender name itself, then this message, then a quoted
+// metadata.taskText line — so every send must set metadata.taskText.
+
+export function getCircleInviteNotificationMessage() {
+  return "wants you in their circle";
+}
+
+export function getCircleInvitePushText(name: string, goalText: string) {
+  return {
+    title: `⭕ ${name} wants you in their circle`,
+    body: `"${goalText}". Same sentence, own momentum. Tap to join.`,
+  };
+}
+
+export function getCircleNudgeNotificationMessage() {
+  return "nudged you — thinking of you";
+}
+
+export function getCircleNudgePushText(name: string, goalText: string) {
+  return {
+    title: `👋 ${name} is thinking of you`,
+    body: `"${goalText}". A quiet nudge, no pressure.`,
+  };
+}
+
+export function getCircleMemberJoinedNotificationMessage() {
+  return "joined your circle";
+}
+
+export function getCircleMemberJoinedPushText(name: string, goalText: string) {
+  return {
+    title: "⭕ Your circle is growing",
+    body: `${name} is in: "${goalText}"`,
+  };
+}
+
+export function getCircleProgressUpdateNotificationMessage() {
+  return "shared an update in your circle";
+}
+
+export function getCircleProgressUpdatePushText(name: string, progressText: string) {
+  return {
+    title: "⭕ Update in your circle",
+    body: `${name}: "${progressText}"`,
+  };
+}
+
+export function getCircleMemberDoneNotificationMessage() {
+  return "took the win in your circle";
+}
+
+export function getCircleMemberDonePushText(name: string, goalText: string) {
+  return {
+    title: "🏁 One of you is done",
+    body: `${name} took the win: "${goalText}"`,
+  };
+}
+
+export function getCircleCompleteNotificationMessage() {
+  return "Your circle did it. All of you.";
+}
+
+export function getCircleCompletePushText(doneCount: number) {
+  return {
+    title: "🏆 Your circle did it. All of you.",
+    body: `${doneCount} of us said we'd do it. ${doneCount} of us did.`,
+  };
+}
+
+// Quiet, owner-only: dissolves have no public trace and no push banner.
+export function getCircleDissolvedNotificationMessage() {
+  return "Your circle wound down, so your goal is back to solo. All your progress is intact.";
+}
+
+export function getCircleInviteShareText(goalText: string, inviteLink: string) {
+  return `Hey. I'm starting "${goalText}" on PushMeUp and I want you in my circle. Join me: ${inviteLink}`;
+}

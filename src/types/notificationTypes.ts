@@ -17,10 +17,14 @@ export const NOTIFICATION_TYPES = {
     TASK_MOTIVATION_MILESTONE_SENT: "task-motivation-milestone-sent",
     TASK_PUSHED_TASK_MILESTONE: "task-pushed-task-milestone",
     TASK_MOTIVATION_UNFINISHED_REMINDER: "task-motivation-unfinished-reminder",
-    TASK_MOTIVATION_HELP_PUSH_REMINDER: "task-motivation-help-push-reminder"
-
-
-
+    TASK_MOTIVATION_HELP_PUSH_REMINDER: "task-motivation-help-push-reminder",
+    CIRCLE_INVITE: "circle-invite",
+    CIRCLE_NUDGE: "circle-nudge",
+    CIRCLE_MEMBER_JOINED: "circle-member-joined",
+    CIRCLE_PROGRESS_UPDATE: "circle-progress-update",
+    CIRCLE_MEMBER_DONE: "circle-member-done",
+    CIRCLE_COMPLETE: "circle-complete",
+    CIRCLE_DISSOLVED: "circle-dissolved"
 } as const;
 
 export type NotificationType = typeof NOTIFICATION_TYPES[keyof typeof NOTIFICATION_TYPES];

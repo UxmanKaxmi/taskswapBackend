@@ -11,7 +11,7 @@ const normalizeFeelingTag = (value: unknown) => {
   return slug;
 };
 
-const feelingSchema = z.preprocess(
+export const feelingSchema = z.preprocess(
   normalizeFeelingTag,
   z.enum(FEELING_TAGS).nullable().optional()
 );

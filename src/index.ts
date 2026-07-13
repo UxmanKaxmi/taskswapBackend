@@ -22,6 +22,11 @@ import {
   taskModerationRoutes,
   userModerationRoutes,
 } from "./features/moderation/moderation.routes";
+import {
+  circleRoutes,
+  circleInviteRoutes,
+} from "./features/circle/circle.routes";
+import { startCircleLifecycleSweep } from "./features/circle/circle.sweep";
 
 import { prisma } from "./db/client";
 import { errorHandler } from "./middleware/errorHandler";
@@ -148,6 +153,8 @@ app.use("/referrals", referralRoutes as Router);
 app.use("/features", featureFlagsRoutes as Router);
 app.use("/feedback", writeLimiter, feedbackRoutes as Router);
 app.use("/beats", writeLimiter, cheerRoutes as Router);
+app.use("/circles", writeLimiter, circleRoutes as Router);
+app.use("/invites", writeLimiter, circleInviteRoutes as Router);
 app.use("/admin", writeLimiter, adminModerationRoutes as Router);
 
 // Push routes, we need Task here
@@ -161,6 +168,7 @@ async function startServer() {
     await prisma.$connect();
     startNotificationReminderSweep();
     startScheduledPushDispatcher();
+    startCircleLifecycleSweep();
     console.log("✅ Connected to the PostgreSQL database");
 
     app.listen(PORT,"0.0.0.0", () => {

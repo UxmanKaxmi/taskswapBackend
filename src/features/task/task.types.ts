@@ -85,4 +85,5 @@ export type GetAllTasksHelpers = {
   limit?: number; // Limit number of tasks returned
   cursor?: string; // Cursor pointing to the last-seen task
   sort?: FeedSort;
+  includeCircles?: boolean; // Clients that can render circle cards opt in
 };

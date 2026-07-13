@@ -333,9 +333,15 @@ export async function cheerBeat({
           }
 
           const lockedTasks = await tx.$queryRaw<
-            { id: string; userId: string; type: string; completed: boolean }[]
+            {
+              id: string;
+              userId: string;
+              type: string;
+              completed: boolean;
+              circleId: string | null;
+            }[]
           >`
-            SELECT id, "userId", type, completed
+            SELECT id, "userId", type, completed, "circleId"
             FROM "Task"
             WHERE id = ${beat.taskId}
             FOR UPDATE
@@ -371,19 +377,24 @@ export async function cheerBeat({
             throw new AppError("This task is unavailable.", HttpStatus.FORBIDDEN);
           }
 
-          const push = await tx.push.findFirst({
-            where: {
-              taskId: beat.taskId,
-              userId,
-            },
-            select: { id: true },
-          });
+          // Circle updates take lightweight reactions from anyone — the
+          // push-first gate only applies to solo tasks (spec v2: a cheer
+          // that isn't a full push is the point of circle reactions).
+          if (!task.circleId) {
+            const push = await tx.push.findFirst({
+              where: {
+                taskId: beat.taskId,
+                userId,
+              },
+              select: { id: true },
+            });
 
-          if (!push) {
-            throw new AppError(
-              "You need to push this task before cheering it.",
-              HttpStatus.FORBIDDEN
-            );
+            if (!push) {
+              throw new AppError(
+                "You need to push this task before cheering it.",
+                HttpStatus.FORBIDDEN
+              );
+            }
           }
 
           const latestBeat = await tx.taskBeat.findFirst({

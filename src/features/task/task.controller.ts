@@ -128,6 +128,8 @@ export async function handleGetTasks(
         : undefined;
 
     const excludeSelf = req.query.excludeSelf === "true";
+    const includeCircles =
+      req.query.includeCircles === "1" || req.query.includeCircles === "true";
     const sort =
       typeof req.query.sort === "string" && req.query.sort.trim().length > 0
         ? req.query.sort.trim()
@@ -138,10 +140,12 @@ export async function handleGetTasks(
       cursor: cursorQuery,
       excludeSelf,
       sort: sort as FeedSort | undefined,
+      includeCircles,
     });
 
     res.status(200).json({
       data: paginated.tasks,
+      ...(paginated.circles ? { circles: paginated.circles } : {}),
       meta: {
         hasMore: paginated.hasMore,
         nextCursor: paginated.nextCursor,

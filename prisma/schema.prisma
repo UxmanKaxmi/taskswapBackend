@@ -29,6 +29,7 @@ model Task {
   isAnonymous      Boolean          @default(false)
   anonAlias        String?
   anonAvatarColor  String?
+  circleId         String?
   Comment          Comment[]
   cheers           Cheer[]
   beats            TaskBeat[]
@@ -37,10 +38,14 @@ model Task {
   reports          TaskReport[]
   progressUpdates  ProgressUpdate[]
   user             User             @relation(fields: [userId], references: [id])
+  circle           Circle?          @relation(fields: [circleId], references: [id], onDelete: SetNull)
+  circleMembership CircleMember?
   Vote             Vote[]
   helpers          User[]           @relation("TaskHelpers")
 
-  @@unique([text, userId])
+  // text+userId uniqueness is a PARTIAL index (WHERE "circleId" IS NULL) so
+  // circle members can carry the shared sentence — raw SQL in the add_circles
+  // migration, same technique as one_active_anon_task_per_user.
   @@index([userId, createdAt])
 }
 
@@ -86,9 +91,78 @@ model User {
   feedback                   Feedback[]
   authAccounts               AuthAccount[]
   scheduledPushes            ScheduledPush[]
+  circlesCreated             Circle[]         @relation("CircleCreator")
+  circleMemberships          CircleMember[]
+  circleInvitesSent          CircleInvite[]   @relation("CircleInviter")
 
   @@unique([provider, providerUserId])
   @@index([origin])
+}
+
+// A circle is a shared frame around individual tasks, never a multi-owner
+// task: each member gets their own Task row carrying the shared sentence.
+model Circle {
+  id          String         @id @default(uuid())
+  goalText    String
+  status      CircleStatus   @default(active)
+  createdById String?
+  createdAt   DateTime       @default(now())
+  completedAt DateTime?
+  dissolvedAt DateTime?
+  createdBy   User?          @relation("CircleCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  members     CircleMember[]
+  invites     CircleInvite[]
+  tasks       Task[]
+
+  @@index([status, createdAt])
+}
+
+// Invite tokens are multi-use until the circle is full (a publicly shared
+// link fills the remaining seats); CircleMember.inviteId is the attribution.
+model CircleInvite {
+  id          String         @id @default(uuid())
+  circleId    String
+  token       String         @unique
+  invitedById String
+  createdAt   DateTime       @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  circle      Circle         @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  invitedBy   User           @relation("CircleInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+  redemptions CircleMember[]
+
+  @@index([circleId, expiresAt])
+}
+
+model CircleMember {
+  id       String            @id @default(uuid())
+  circleId String
+  userId   String
+  taskId   String?           @unique
+  inviteId String?
+  state    CircleMemberState @default(active)
+  joinedAt DateTime          @default(now())
+  leftAt   DateTime?
+  doneAt   DateTime?
+  circle   Circle            @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task     Task?             @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  invite   CircleInvite?     @relation(fields: [inviteId], references: [id], onDelete: SetNull)
+
+  @@unique([circleId, userId])
+  @@index([userId, state])
+}
+
+enum CircleStatus {
+  active
+  complete
+  dissolved
+}
+
+enum CircleMemberState {
+  active
+  left
+  done
 }
 
 model ScheduledPush {

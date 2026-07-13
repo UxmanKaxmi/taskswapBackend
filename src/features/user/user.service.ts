@@ -14,6 +14,7 @@ import {
   revokeAppleRefreshToken,
 } from "./appleAuth.service";
 import { getBlockedUserIdsForViewer } from "../moderation/moderation.service";
+import { evaluateCircleLifecycle } from "../circle/circle.service";
 import { toPublicUser, PublicUserRecord } from "./user.serializers";
 
 export async function syncUserToDB({
@@ -248,6 +249,16 @@ export async function deleteMyAccount(userId: string) {
     console.error("[APPLE_AUTH] Failed to revoke Apple refresh token", error);
   }
 
+  // Snapshot circle memberships before the cascades remove them: account
+  // deletion is a silent leave from every circle, and each circle must be
+  // re-evaluated (dissolve/complete) once the rows are gone.
+  const circleIdsToReevaluate = (
+    await prisma.circleMember.findMany({
+      where: { userId, state: { in: ["active", "done"] } },
+      select: { circleId: true },
+    })
+  ).map((membership) => membership.circleId);
+
   await prisma.$transaction(async (tx) => {
     await tx.user.updateMany({
       where: { id: userId },
@@ -312,6 +323,10 @@ export async function deleteMyAccount(userId: string) {
     await tx.task.deleteMany({ where: { userId } });
     await tx.user.deleteMany({ where: { id: userId } });
   });
+
+  for (const circleId of circleIdsToReevaluate) {
+    await evaluateCircleLifecycle(circleId);
+  }
 }
 
 export async function getMutualFriends(
