@@ -359,7 +359,9 @@ export async function cheerBeat({
             );
           }
 
-          if (task.completed) {
+          // Circle wins stay cheerable after the finish: "cheer them on"
+          // is the point of a done lane. Solo tasks close as before.
+          if (task.completed && !task.circleId) {
             throw new AppError(
               "Completed tasks cannot receive cheers.",
               HttpStatus.CONFLICT
@@ -403,7 +405,12 @@ export async function cheerBeat({
             select: { id: true },
           });
 
-          if (latestBeat?.id !== beat.id) {
+          // A finished circle task's post beat is its win beat: the timeline
+          // offers "cheer them on" there even when update beats came later.
+          const isCircleWinBeat =
+            Boolean(task.circleId) && task.completed && beat.type === "post";
+
+          if (latestBeat?.id !== beat.id && !isCircleWinBeat) {
             throw new AppError(
               "Cheering is only open on the latest beat.",
               HttpStatus.CONFLICT

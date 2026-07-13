@@ -37,8 +37,16 @@ export type CircleActivityEventDTO = {
   at: string;
   name: string;
   avatar: string;
+  // Actor id so the client can render "You" and gate cheer affordances.
+  userId?: string;
   text?: string;
   targetName?: string;
+  // Cheerable events ride the existing cheer machinery: updates carry their
+  // update beat, done wins carry the task's post beat. Absent otherwise.
+  beatId?: string;
+  cheerCount?: number;
+  viewerHasCheered?: boolean;
+  latestCheer?: { name: string; text: string } | null;
 };
 
 export type CircleDetailDTO = {

@@ -715,7 +715,12 @@ export async function getCircleById(
     nudgesToday.forEach((nudge) => viewerNudgedUserIds.add(nudge.userId));
   }
 
-  const activity = await buildCircleActivity(circle, visibleMembers, blockedIds);
+  const activity = await buildCircleActivity(
+    circle,
+    visibleMembers,
+    blockedIds,
+    viewerId
+  );
 
   return toCircleDetail({
     circle,
@@ -736,6 +741,42 @@ export async function getCircleById(
 
 const CIRCLE_ACTIVITY_LIMIT = 30;
 
+// A cheerable beat with enough context for the timeline: total count plus
+// the most recent cheer from a non-blocked member (name + phrase snapshot).
+type ActivityBeat = {
+  id: string;
+  _count: { cheers: number };
+  cheers: { presetTextSnapshot: string; user: { id: string; name: string } }[];
+};
+
+function toActivityCheerFields(
+  beat: ActivityBeat | null | undefined,
+  blockedIds: Set<string>
+): Pick<CircleActivityEventDTO, "beatId" | "cheerCount" | "latestCheer"> {
+  if (!beat) return {};
+  const latest = beat.cheers.find((cheer) => !blockedIds.has(cheer.user.id));
+  return {
+    beatId: beat.id,
+    cheerCount: beat._count.cheers,
+    latestCheer: latest
+      ? { name: latest.user.name, text: latest.presetTextSnapshot }
+      : null,
+  };
+}
+
+const activityBeatSelect = {
+  id: true,
+  _count: { select: { cheers: true } },
+  cheers: {
+    orderBy: { createdAt: "desc" as const },
+    take: 3,
+    select: {
+      presetTextSnapshot: true,
+      user: { select: { id: true, name: true } },
+    },
+  },
+} as const;
+
 async function buildCircleActivity(
   circle: {
     id: string;
@@ -750,8 +791,10 @@ async function buildCircleActivity(
     joinedAt: Date;
     doneAt: Date | null;
     user: { name: string; photo: string | null };
+    task?: { id: string } | null;
   }[],
-  blockedIds: Set<string>
+  blockedIds: Set<string>,
+  viewerId?: string | null
 ): Promise<CircleActivityEventDTO[]> {
   const events: CircleActivityEventDTO[] = [];
   const memberNameByUserId = new Map(
@@ -765,8 +808,21 @@ async function buildCircleActivity(
       at: circle.createdAt.toISOString(),
       name: circle.createdBy.name,
       avatar: circle.createdBy.photo ?? "",
+      userId: circle.createdById,
     });
   }
+
+  // Done wins are cheerable via the task's post beat ("cheer them on").
+  const doneTaskIds = visibleMembers
+    .filter((member) => member.doneAt && member.task?.id)
+    .map((member) => member.task!.id);
+  const postBeats = doneTaskIds.length
+    ? await prisma.taskBeat.findMany({
+        where: { taskId: { in: doneTaskIds }, type: "post" },
+        select: { taskId: true, ...activityBeatSelect },
+      })
+    : [];
+  const postBeatByTaskId = new Map(postBeats.map((beat) => [beat.taskId, beat]));
 
   for (const member of visibleMembers) {
     if (member.userId !== circle.createdById) {
@@ -776,6 +832,7 @@ async function buildCircleActivity(
         at: member.joinedAt.toISOString(),
         name: member.user.name,
         avatar: member.user.photo ?? "",
+        userId: member.userId,
       });
     }
 
@@ -786,6 +843,11 @@ async function buildCircleActivity(
         at: member.doneAt.toISOString(),
         name: member.user.name,
         avatar: member.user.photo ?? "",
+        userId: member.userId,
+        ...toActivityCheerFields(
+          member.task ? postBeatByTaskId.get(member.task.id) : null,
+          blockedIds
+        ),
       });
     }
   }
@@ -799,18 +861,26 @@ async function buildCircleActivity(
       text: true,
       createdAt: true,
       sender: { select: { id: true, name: true, photo: true } },
+      beat: { select: activityBeatSelect },
     },
   });
 
+  // Only a member's newest update is cheerable (the cheer machinery opens
+  // the latest beat only), so older update events stay plain quotes.
+  const latestUpdateSeen = new Set<string>();
   for (const update of updates) {
     if (blockedIds.has(update.sender.id)) continue;
+    const isLatestForSender = !latestUpdateSeen.has(update.sender.id);
+    latestUpdateSeen.add(update.sender.id);
     events.push({
       id: `update-${update.id}`,
       kind: "update",
       at: update.createdAt.toISOString(),
       name: update.sender.name,
       avatar: update.sender.photo ?? "",
+      userId: update.sender.id,
       text: update.text,
+      ...(isLatestForSender ? toActivityCheerFields(update.beat, blockedIds) : {}),
     });
   }
 
@@ -836,6 +906,7 @@ async function buildCircleActivity(
       at: push.createdAt.toISOString(),
       name: push.user.name,
       avatar: push.user.photo ?? "",
+      userId: push.user.id,
       targetName,
     });
   }
@@ -850,9 +921,27 @@ async function buildCircleActivity(
     });
   }
 
-  return events
+  const timeline = events
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, CIRCLE_ACTIVITY_LIMIT);
+
+  const beatIds = timeline
+    .map((event) => event.beatId)
+    .filter((id): id is string => Boolean(id));
+  if (viewerId && beatIds.length > 0) {
+    const viewerCheers = await prisma.cheer.findMany({
+      where: { userId: viewerId, beatId: { in: beatIds } },
+      select: { beatId: true },
+    });
+    const cheeredBeatIds = new Set(viewerCheers.map((cheer) => cheer.beatId));
+    for (const event of timeline) {
+      if (event.beatId) {
+        event.viewerHasCheered = cheeredBeatIds.has(event.beatId);
+      }
+    }
+  }
+
+  return timeline;
 }
 
 /* -------------------------------------------------------

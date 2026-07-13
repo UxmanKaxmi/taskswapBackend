@@ -319,6 +319,40 @@ describe("Circles", () => {
       expect(creatorLane.completed).toBe(true);
     });
 
+    it("keeps the win cheerable via the done event's post beat", async () => {
+      // The activity timeline offers "cheer them on" on done wins: the done
+      // event carries the task's post beat, cheerable even though the task
+      // is completed and newer update beats exist.
+      const viewerId = JOINER_B_ID;
+      const detail = await request(app)
+        .get(`/circles/${circleId}`)
+        .set("Authorization", `Bearer ${tokenFor(viewerId)}`);
+
+      const doneEvent = detail.body.activity.find(
+        (event: { kind: string; userId?: string }) =>
+          event.kind === "done" && event.userId === CREATOR_ID
+      );
+      expect(doneEvent).toBeTruthy();
+      expect(doneEvent.beatId).toBeTruthy();
+      expect(doneEvent.viewerHasCheered).toBe(false);
+
+      const cheer = await request(app)
+        .post(`/beats/${doneEvent.beatId}/cheer`)
+        .set("Authorization", `Bearer ${tokenFor(viewerId)}`)
+        .send({ presetKey: "keep_going" });
+      expect(cheer.status).toBe(200);
+
+      const after = await request(app)
+        .get(`/circles/${circleId}`)
+        .set("Authorization", `Bearer ${tokenFor(viewerId)}`);
+      const afterEvent = after.body.activity.find(
+        (event: { kind: string; userId?: string }) =>
+          event.kind === "done" && event.userId === CREATOR_ID
+      );
+      expect(afterEvent.viewerHasCheered).toBe(true);
+      expect(afterEvent.cheerCount).toBe(1);
+    });
+
     it("completes the circle when every member has won", async () => {
       const remaining = await prisma.circleMember.findMany({
         where: { circleId, state: "active" },
