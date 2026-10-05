@@ -18,6 +18,7 @@ export const NOTIFICATION_TYPES = {
   taskMotivationHelpPushReminder: "taskMotivationHelpPushReminder",
   commentMention: "commentMention",
   taskProgressUpdate: "taskProgressUpdate",
+  featureRelease: "feature-release",
 } as const;
 
 export type NotificationType =
@@ -39,6 +40,12 @@ export type CommentMentionMeta = TaskRefMeta & {
   commentId: string;
   commentText?: string;
 };
+export type FeatureReleaseMeta = {
+  featureKey: string;
+  featureName: string;
+  deeplinkPath?: string;
+  screen?: string;
+};
 
 // Map each type → its metadata (extend as needed)
 export interface MetadataByType {
@@ -59,6 +66,7 @@ export interface MetadataByType {
   taskProgressUpdate: TaskRefMeta & {
     progressText?: string;
   };
+  "feature-release": FeatureReleaseMeta;
 }
 
 // 3) Sender shown alongside notifications

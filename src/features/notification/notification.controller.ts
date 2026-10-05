@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { getParamString } from "../../utils/params";
 import {
+  announceFeatureRelease,
   getUserNotifications,
   markNotificationAsRead,
   markNotificationsAsRead,
+  sendFeatureReleasePreviewToUser,
   sendSilentNotificationToUser,
   sendTestNotification,
 } from "./notification.service";
@@ -105,6 +107,109 @@ export async function handleTestSendNotification(
     res.status(200).json({ message: "Notification sent successfully" });
   } catch (error) {
     console.error("❌ Failed to send test notification:", error);
+    next(error);
+  }
+}
+
+function stringFromBody(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export async function handleAnnounceFeatureRelease(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const featureKey = stringFromBody(req.body.featureKey);
+    const featureName = stringFromBody(req.body.featureName);
+    const title = stringFromBody(req.body.title);
+    const body = stringFromBody(req.body.body);
+    const deeplinkPath = stringFromBody(req.body.deeplinkPath);
+    const screen = stringFromBody(req.body.screen);
+
+    if (!featureKey || !/^[a-z0-9][a-z0-9._-]{1,63}$/.test(featureKey)) {
+      res.status(400).json({
+        message:
+          "featureKey is required and must be 2-64 chars using lowercase letters, numbers, '.', '_' or '-'",
+      });
+      return;
+    }
+
+    if (!featureName || featureName.length > 80) {
+      res.status(400).json({ message: "featureName is required and must be 80 chars or less" });
+      return;
+    }
+
+    if ((title && !body) || (!title && body)) {
+      res.status(400).json({ message: "title and body must be provided together" });
+      return;
+    }
+
+    const result = await announceFeatureRelease({
+      featureKey,
+      featureName,
+      title: title || undefined,
+      body: body || undefined,
+      deeplinkPath: deeplinkPath || undefined,
+      screen: screen || undefined,
+      dryRun: req.body.dryRun === true,
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function handlePreviewFeatureRelease(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Not authenticated" });
+      return;
+    }
+
+    const featureKey = stringFromBody(req.body.featureKey);
+    const featureName = stringFromBody(req.body.featureName);
+    const title = stringFromBody(req.body.title);
+    const body = stringFromBody(req.body.body);
+    const deeplinkPath = stringFromBody(req.body.deeplinkPath);
+    const screen = stringFromBody(req.body.screen);
+
+    if (!featureKey || !/^[a-z0-9][a-z0-9._-]{1,63}$/.test(featureKey)) {
+      res.status(400).json({
+        message:
+          "featureKey is required and must be 2-64 chars using lowercase letters, numbers, '.', '_' or '-'",
+      });
+      return;
+    }
+
+    if (!featureName || featureName.length > 80) {
+      res.status(400).json({ message: "featureName is required and must be 80 chars or less" });
+      return;
+    }
+
+    if ((title && !body) || (!title && body)) {
+      res.status(400).json({ message: "title and body must be provided together" });
+      return;
+    }
+
+    const result = await sendFeatureReleasePreviewToUser(userId, {
+      featureKey,
+      featureName,
+      title: title || undefined,
+      body: body || undefined,
+      deeplinkPath: deeplinkPath || undefined,
+      screen: screen || undefined,
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
     next(error);
   }
 }

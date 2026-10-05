@@ -15,12 +15,34 @@ import {
   getTaskHelperNotificationMessage,
   getTaskProgressUpdateNotificationMessage,
   getNotificationMarkerMessage,
+  getFeatureReleaseNotificationMessage,
+  getFeatureReleasePushText,
 } from "../../utils/notificationTextCatalog";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { USER_ORIGIN } from "../seededUser/seededUser.service";
 
 
 const MOTIVATION_PUSH_MILESTONES = [5, 10, 20, 50, 100];
+const ANNOUNCEMENT_NOTIFICATION_BATCH_SIZE = 500;
+const ANNOUNCEMENT_PUSH_BATCH_SIZE = 100;
+
+type FeatureReleaseAnnouncementInput = {
+  featureKey: string;
+  featureName: string;
+  title?: string;
+  body?: string;
+  deeplinkPath?: string;
+  screen?: string;
+  dryRun?: boolean;
+};
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 // 📨 Get notifications for the logged-in user
 export async function getUserNotifications(userId: string) {
@@ -96,6 +118,145 @@ export async function sendTestNotification(
   }
 
   await sendPushNotification(user.fcmToken, title, body, data);
+}
+
+export async function announceFeatureRelease({
+  featureKey,
+  featureName,
+  title,
+  body,
+  deeplinkPath,
+  screen,
+  dryRun = false,
+}: FeatureReleaseAnnouncementInput) {
+  const [targetUsers, totalRealUsers] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        origin: USER_ORIGIN.REAL,
+        notifications: {
+          none: {
+            type: NOTIFICATION_TYPES.FEATURE_RELEASE,
+            metadata: {
+              path: ["featureKey"],
+              equals: featureKey,
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        fcmToken: true,
+      },
+    }),
+    prisma.user.count({ where: { origin: USER_ORIGIN.REAL } }),
+  ]);
+
+  const pushRecipients = targetUsers.filter((user) => Boolean(user.fcmToken));
+  const skippedAlreadyAnnounced = totalRealUsers - targetUsers.length;
+  const pushText = title && body ? { title, body } : getFeatureReleasePushText(featureName);
+  const metadata = {
+    featureKey,
+    featureName,
+    ...(deeplinkPath ? { deeplinkPath } : {}),
+    ...(screen ? { screen } : {}),
+  };
+
+  if (dryRun) {
+    return {
+      dryRun: true,
+      targetUserCount: targetUsers.length,
+      pushRecipientCount: pushRecipients.length,
+      skippedAlreadyAnnounced,
+      createdNotificationCount: 0,
+      pushSentCount: 0,
+      pushFailedCount: 0,
+    };
+  }
+
+  let createdNotificationCount = 0;
+  for (const users of chunk(targetUsers, ANNOUNCEMENT_NOTIFICATION_BATCH_SIZE)) {
+    const result = await prisma.notification.createMany({
+      data: users.map((user) => ({
+        userId: user.id,
+        senderId: null,
+        type: NOTIFICATION_TYPES.FEATURE_RELEASE,
+        message: getFeatureReleaseNotificationMessage(featureName),
+        metadata,
+      })),
+    });
+    createdNotificationCount += result.count;
+  }
+
+  let pushSentCount = 0;
+  let pushFailedCount = 0;
+  for (const users of chunk(pushRecipients, ANNOUNCEMENT_PUSH_BATCH_SIZE)) {
+    const results = await Promise.all(
+      users.map((user) =>
+        user.fcmToken
+          ? sendPushNotification(user.fcmToken, pushText.title, pushText.body, {
+              notificationType: NOTIFICATION_TYPES.FEATURE_RELEASE,
+              featureKey,
+              featureName,
+              ...(deeplinkPath ? { deeplinkPath } : {}),
+              ...(screen ? { screen } : {}),
+            })
+          : Promise.resolve(false)
+      )
+    );
+
+    pushSentCount += results.filter(Boolean).length;
+    pushFailedCount += results.filter((sent) => !sent).length;
+  }
+
+  return {
+    dryRun: false,
+    targetUserCount: targetUsers.length,
+    pushRecipientCount: pushRecipients.length,
+    skippedAlreadyAnnounced,
+    createdNotificationCount,
+    pushSentCount,
+    pushFailedCount,
+  };
+}
+
+export async function sendFeatureReleasePreviewToUser(
+  userId: string,
+  {
+    featureKey,
+    featureName,
+    title,
+    body,
+    deeplinkPath,
+    screen,
+  }: Omit<FeatureReleaseAnnouncementInput, "dryRun">
+) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fcmToken: true },
+  });
+
+  if (!user?.fcmToken) {
+    return {
+      sent: false,
+      reason: "No FCM token registered for this user",
+    };
+  }
+
+  const pushText = title && body ? { title, body } : getFeatureReleasePushText(featureName);
+  const sent = await sendPushNotification(user.fcmToken, pushText.title, pushText.body, {
+    notificationType: NOTIFICATION_TYPES.FEATURE_RELEASE,
+    featureKey,
+    featureName,
+    preview: "true",
+    ...(deeplinkPath ? { deeplinkPath } : {}),
+    ...(screen ? { screen } : {}),
+  });
+
+  return {
+    sent,
+    title: pushText.title,
+    body: pushText.body,
+  };
 }
 
 // 👥 Notify helpers when invited to a task

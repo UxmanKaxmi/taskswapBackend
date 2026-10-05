@@ -165,6 +165,17 @@ export function getNotificationMarkerMessage() {
   return "milestone reached";
 }
 
+export function getFeatureReleaseNotificationMessage(featureName: string) {
+  return `${featureName} is now available`;
+}
+
+export function getFeatureReleasePushText(featureName: string) {
+  return {
+    title: `New feature: ${featureName}`,
+    body: `Try ${featureName} in PushMeUp now.`,
+  };
+}
+
 // TODO: not aligned with push-only. "Reminder" is no longer a feature. Update or remove.
 export function getReminderReceivedNotificationMessage(senderName: string) {
   return `${senderName} reminded you about your task.`;

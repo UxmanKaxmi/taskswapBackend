@@ -24,7 +24,8 @@ export const NOTIFICATION_TYPES = {
     CIRCLE_PROGRESS_UPDATE: "circle-progress-update",
     CIRCLE_MEMBER_DONE: "circle-member-done",
     CIRCLE_COMPLETE: "circle-complete",
-    CIRCLE_DISSOLVED: "circle-dissolved"
+    CIRCLE_DISSOLVED: "circle-dissolved",
+    FEATURE_RELEASE: "feature-release"
 } as const;
 
 export type NotificationType = typeof NOTIFICATION_TYPES[keyof typeof NOTIFICATION_TYPES];
